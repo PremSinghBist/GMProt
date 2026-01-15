@@ -11,7 +11,7 @@ class ExperimentConfig:
     patience: int = 200
 
     #physio features
-    physio_feature_dim: int = 32
+    physio_feature_dim: int = 32 
     blosum_feature_dim: int = 20
 
     #Transformer 
@@ -25,6 +25,7 @@ class ExperimentConfig:
     seq_dropout: float = 0.3
 
     # GNN
+    gnn_base_output_dim: int = 1 #
     gnn_hidden: int = 64
     gnn_heads: int = 4
     gnn_layers: int = 3
@@ -33,6 +34,7 @@ class ExperimentConfig:
 
     # Physio
     physio_proj: int = 32
+    pos_proj: int = 12
     physio_bottleneck_dim: int = 128
 
     # Fusion
@@ -79,6 +81,10 @@ class ExperimentConfig:
     seq_max_len : int = 128  #Maximum sequence length for positional encoding
     postion_aware_feature_dim : int = 60 #Position aware one-hot encoding dimension
 
+    #cnn 
+    cnn_input_dim : int = 21
+    cnn_emb_output_dim : int = 24
+    cnn_filters : int = 64
 
 
 

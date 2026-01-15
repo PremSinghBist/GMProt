@@ -5,6 +5,16 @@ from sklearn.preprocessing import StandardScaler
 
 PHYSIO_CHEM_FILE = 'data/phyiochem.csv'
 
+# Eisenberg hydrophobicity values
+EISENBERG = {
+    "A": 0.62, "C": 0.29, "D": -1.50, "E": -1.50, "F": 1.19,
+    "G": 0.48, "H": -0.40, "I": 1.38, "K": -1.50, "L": 1.06,
+    "M": 0.64, "N": -0.78, "P": -1.52, "Q": -0.85, "R": -2.53,
+    "S": -0.18, "T": -0.05, "V": 1.08, "W": 0.81, "Y": 0.26
+}
+
+CHARGE = {"D": -1, "E": -1, "K": 1, "R": 1, "H": 0}
+
 def extract_amp_features(sequences):
     """
     Extracts physicochemical features, capturing descriptors before 
@@ -306,17 +316,114 @@ def save_dict_to_txt(corr_dict, out_path="/data/prem001/PGAT-ABPp/code/data/phys
             f.write(f"{feature}\t{score:.6f}\n")
         
 
+def _mean_hydro(seq):
+    return np.mean([EISENBERG.get(a, 0.0) for a in seq])
+
+def _net_charge(seq):
+    return sum([CHARGE.get(a, 0) for a in seq])
+
+def _hydrophobic_moment(seq):
+    if len(seq) < 3:
+        return 0.0
+    pep = PeptideDescriptor([seq], "eisenberg")
+    pep.calculate_moment()
+    return float(pep.descriptor[0][0])
+
+
+def compute_nc_terminal_bias_from_sequences(sequences):
+    """
+    Compute N/C terminal physicochemical asymmetry features.
+
+    Parameters
+    ----------
+    sequences : list[str]
+
+    Returns
+    -------
+    pd.DataFrame with columns:
+    [sequence, N_charge, C_charge, Delta_charge,
+               N_hydro, C_hydro, Delta_hydro,
+               N_moment, C_moment, Delta_moment]
+    """
+    records = []
+
+    for seq in sequences:
+        L = len(seq)
+        k = max(3, int(0.5 * L))   # 50% split, min 3 aa
+
+        N = seq[:k]
+        C = seq[-k:]
+
+        N_charge = _net_charge(N)
+        C_charge = _net_charge(C)
+
+        N_h = _mean_hydro(N)
+        C_h = _mean_hydro(C)
+
+        N_m = _hydrophobic_moment(N)
+        C_m = _hydrophobic_moment(C)
+
+        records.append({
+            "sequence": seq,
+            "N_charge": N_charge,
+            "C_charge": C_charge,
+            "Delta_charge": N_charge - C_charge,
+
+            "N_hydro": N_h,
+            "C_hydro": C_h,
+            "Delta_hydro": N_h - C_h,
+
+            "N_moment": N_m,
+            "C_moment": C_m,
+            "Delta_moment": N_m - C_m
+        })
+
+    return pd.DataFrame(records)
+
+def compute_nc_terminal_bias_from_csv(csv_path, out_csv="data/nc_terminal_bias.csv"):
+    """
+    Load sequences from CSV, compute N/C terminal bias, and save.
+
+    Input CSV must contain a 'sequence' column.
+    """
+    df = pd.read_csv(csv_path)
+    sequences = df["sequence"].astype(str).tolist()
+
+    bias_df = compute_nc_terminal_bias_from_sequences(sequences)
+
+    bias_df.to_csv(out_csv, index=False)
+    print(f"Saved N/C terminal bias features to: {out_csv}")
+
+    return bias_df
+
+def comp_save_full_physio_with_nc_terminal_bias():
+    #Save nc_terminal bias data 
+    physico_chem_src ="data/phyiochem.csv"  
+    nc_terminal_bias_save_path = "data/nc_terminal_bias.csv"  
+    nc_df = compute_nc_terminal_bias_from_csv(
+        csv_path=physico_chem_src,
+        out_csv=nc_terminal_bias_save_path
+    )
+
+    #merge with original physio 
+    full_phyisioc_with_nc = "data/phyiochem_with_nc_bias.csv"
+    physio = pd.read_csv(physico_chem_src)
+    physio = physio.merge(nc_df, on="sequence", how="left")
+
+    physio.to_csv(full_phyisioc_with_nc, index=False)
+
 
 
 if __name__ == "__main__":
     # compute_save_physio_features()
-   compute_physio_mic_correlation(
+    comp_save_full_physio_with_nc_terminal_bias() #Save full physiochem features with nc bias
+    '''compute_physio_mic_correlation(
         physio_csv=f"data/phyiochem.csv",
         mic_csv=f"data/ecoli_mic_normalized.csv",
         sequence_col="sequence",
         target_col="log_mic",
         save_path="data/physio_mic_correlation_full.csv"
-    )
+    )'''
 
 
     # load_physio_features_as_numpy()

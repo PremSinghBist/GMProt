@@ -33,7 +33,7 @@ def stratified_train_val_test_splits(
     max_attempts=100
 ):  
     '''
-    Features tuple :  emb, cm, physio_feature, blosum_feature, sinu_feature, position_aware_feature, mic
+    Features tuple :  emb, cm, physio_feature, blosum_feature, sinu_feature, seq, mic
     '''
     assert train_size + val_size + test_size == len(features)
 
@@ -135,27 +135,27 @@ def normalize(features, mean=None, std=None, eps=1e-8):
 def load_features(normalize_features=True):
     '''
     Returns:
-        features: List[(emb, cm, physio_norm, blosum_norm, mic)]
+        features: List [emb, cm, physio_feature, blosum_feature, sinu_feature, seq, mic]
         stats: dict with normalization statistics
     '''
     df = pd.read_csv(CONTACT_MAP_FILE)
     seqs, _, embs = prott5.load_embeddings(EMBEDDING_FILE)
 
     blosum_dict = load_blosum62_features(csv_path=BLOSUM62_FILE) #20 features
-    physio_dict = PFE.load_physio_features_as_numpy_all() #load_physio_features_as_numpy() #32 features
+    physio_dict = PFE.load_physio_features_as_numpy_all() # #32+9 extra n/c bias=41 features
 
 
     # Load sinusoidal positional encodings | dict[Seq1: np.ndarray (32,), ...]
     sinusoidal_encoding_dict = PEE.load_sinusoidal_encoding(SINUSOIDAL_ENCODING_FILE)
 
-    #postion aware features
-    position_aware_dict = PAF.load_feature_csv_as_dict(POSITION_AWARE_FILE)
+    #postion aware features | Performance adverse
+    # position_aware_dict = PAF.load_feature_csv_as_dict(POSITION_AWARE_FILE)
 
     features = []
     physio_list = []
     blosum_list = []
     sinusoidal_encoding_list = []
-    position_aware_list = []
+    # position_aware_list = []
 
     # -------------------------------
     # Load raw features
@@ -167,19 +167,19 @@ def load_features(normalize_features=True):
         if emb.ndim == 1:
             emb = emb.reshape(-1, EMB_DIM)
 
-        if seq not in physio_dict or seq not in blosum_dict or seq not in sinusoidal_encoding_dict or seq not in position_aware_dict:
+        if seq not in physio_dict or seq not in blosum_dict or seq not in sinusoidal_encoding_dict:
             raise ValueError(f"Sequence {seq} missing in physio or blosum or sinusoidal or position aware features.")
 
         physio_feature = physio_dict[seq].astype(np.float32)
         blosum_feature = blosum_dict[seq].astype(np.float32)
         sinu_feature = sinusoidal_encoding_dict[seq].astype(np.float32)
-        position_aware_feature = position_aware_dict[seq].astype(np.float32)
+        # position_aware_feature = position_aware_dict[seq].astype(np.float32)
 
-        features.append([emb, cm, physio_feature, blosum_feature, sinu_feature, position_aware_feature, mic])
+        features.append([emb, cm, physio_feature, blosum_feature, sinu_feature, seq, mic])
         physio_list.append(physio_feature)
         blosum_list.append(blosum_feature)
         sinusoidal_encoding_list.append(sinusoidal_encoding_dict[seq])
-        position_aware_list.append(position_aware_feature)  
+        # position_aware_list.append(position_aware_feature)  
 
     # -------------------------------
     # Normalize (replace in features)
@@ -188,19 +188,19 @@ def load_features(normalize_features=True):
         physio_arr = np.stack(physio_list)   # (N, Dp)
         blosum_arr = np.stack(blosum_list)   # (N, 20)
         sino_arr  = np.stack(sinusoidal_encoding_list)  # (N, 32)
-        position_aware_arr = np.stack(position_aware_list)  # (N, 60)
+        # position_aware_arr = np.stack(position_aware_list)  # (N, 60)
 
         physio_norm, physio_mean, physio_std = normalize(physio_arr)
         blosum_norm, blosum_mean, blosum_std = normalize(blosum_arr)
         sino_norm, sino_mean, sino_std = normalize(sino_arr) 
-        position_aware_norm, position_aware_mean, position_aware_std = normalize(position_aware_arr) 
+        # position_aware_norm, position_aware_mean, position_aware_std = normalize(position_aware_arr) 
         
         # Replace raw values with normalized ones
         for i in range(len(features)):
             features[i][2] = physio_norm[i] #Physio index 2
             features[i][3] = blosum_norm[i] #Blosum index 3
             features[i][4] = sino_norm[i]   # Sinusoidal index 4
-            features[i][5] = position_aware_norm[i] # Position aware index 5
+            # features[i][5] = position_aware_norm[i] # Position aware index 5
     
     # Logging
     # -------------------------------
@@ -212,8 +212,7 @@ def load_features(normalize_features=True):
     print(f"  Physio-Chemical (normalized): {sample[2].shape}")
     print(f"  BLOSUM62 (normalized): {sample[3].shape}")
     print(f"  Sinusoidal PE (normalized) shape: {sample[4].shape}")
-    print(f"  Position Aware (normalized): {sample[5].shape}")
-    print(f"  MIC: {sample[6]}")
+    print(f"  MIC: {sample[5]}")
 
 
     return features

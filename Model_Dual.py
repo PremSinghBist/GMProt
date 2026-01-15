@@ -250,7 +250,7 @@ class TransformerEncoderReadout(layers.Layer):
 
 
         
-def GraphAttentionNetwork(atom_dim, hidden_units, num_heads, num_layers, batch_size=32, output_dim=1):
+def GraphAttentionNetwork(atom_dim, hidden_units, num_heads, num_layers):
     
     # Input layers
     node_features = layers.Input((atom_dim,), dtype="float32", name="atom_features")
@@ -274,7 +274,7 @@ def GraphAttentionNetwork(atom_dim, hidden_units, num_heads, num_layers, batch_s
     x = layers.LayerNormalization()(x)   # New | Graph-level normalization
 
     # Output layer (linear for regression)
-    outputs = layers.Dense(output_dim, kernel_initializer=keras.initializers.GlorotUniform(seed=113))(x)  # No activation for regression
+    outputs = layers.Dense(cfg.gnn_base_output_dim, kernel_initializer=keras.initializers.GlorotUniform(seed=113))(x)  # No activation for regression
     
     # Build model
     model = keras.models.Model(
@@ -284,3 +284,61 @@ def GraphAttentionNetwork(atom_dim, hidden_units, num_heads, num_layers, batch_s
 
     
     return model
+
+class CrossAttentionFusion(tf.keras.layers.Layer):
+    def __init__(self, dim, num_heads=4, dropout=0.1):
+        super().__init__()
+        self.dim = dim
+
+        # Transformer-style cross-attention
+        self.mha = tf.keras.layers.MultiHeadAttention(
+            num_heads=num_heads,
+            key_dim=dim // num_heads,
+            dropout=dropout
+        )
+
+        # Layer norms for stability
+        self.norm1 = tf.keras.layers.LayerNormalization()
+        self.norm2 = tf.keras.layers.LayerNormalization()
+
+        # Projection after attention
+        self.proj = tf.keras.layers.Dense(dim)
+
+        # Learnable modality scoring
+        self.score = tf.keras.layers.Dense(1)
+
+    def call(self, seq_feat, gnn_feat, physio_feat, training=False):
+        """
+        Inputs:
+            seq_feat    : [B, D]
+            gnn_feat    : [B, D]
+            physio_feat : [B, D]
+        Returns:
+            fused       : [B, D]
+            attn_scores : [B, 3, 1]
+        """
+
+        # Convert each modality into a token
+        tokens = tf.stack([seq_feat, gnn_feat, physio_feat], axis=1)   # [B, 3, D]
+
+        # Cross-attention across modalities
+        attn = self.mha(
+            query=tokens,
+            key=tokens,
+            value=tokens,
+            training=training
+        )                                                             # [B, 3, D]
+
+        # Residual + normalization
+        tokens = self.norm1(tokens + attn)
+
+        # Projection
+        tokens = self.norm2(self.proj(tokens))
+
+        # Learn modality importance
+        attn_scores = tf.nn.softmax(self.score(tokens), axis=1)       # [B, 3, 1]
+
+        # Attention-weighted fusion
+        fused = tf.reduce_sum(tokens * attn_scores, axis=1)          # [B, D]
+
+        return fused, attn_scores
