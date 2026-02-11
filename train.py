@@ -683,8 +683,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model",
         type=str,
-        default="MoPro",
-        help="Model name (default: MoPro)"
+        default="ModProt",
+        help="Model name (default: ModProt)"
     )
     parser.add_argument(
         "--datasets",

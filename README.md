@@ -2,7 +2,9 @@
 
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
 
-MoPro is a flexible pipeline for training, predicting, and visualizing feature contributions for peptide/protein modeling tasks. It supports multiple datasets, cross-validation, and interpretable results using feature contribution plots (Integrated Gradients).
+ModProt is a flexible pipeline for training, prediction, and visualization of feature contributions in antimicrobial peptide activity modeling, including the estimation of Minimum Inhibitory Concentration (MIC). This framework accompanies and supports our work, “Gated Protein Language Modeling for Accurate Prediction of Antimicrobial Peptide Activity.”
+
+For a comprehensive description of the approach, please refer to the paper: [link here]
 
 ---
 
@@ -21,8 +23,7 @@ MoPro is a flexible pipeline for training, predicting, and visualizing feature c
 1. **Clone the repository:**
 
 ```bash
-git clone https://github.com/yourusername/mopro.git
-cd mopro
+git clone https://github.com/PremSinghBist/abp.git
 ```
 
 2. **Install dependencies:**
