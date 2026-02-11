@@ -30,7 +30,7 @@ cd mopro
 pip install -r requirements.txt
 
 
-3. **Usage:**
+## Usage
 ```bash
 python train.py <mode> [--model MODEL_NAME] [--datasets DATASET_INDICES]
 
