@@ -9,7 +9,7 @@ Features:
 - Attention-based fusion of branches
 - Predict raw MIC directly
 """
-
+import argparse
 import os
 from pathlib import Path
 import random
@@ -283,47 +283,22 @@ class ImprovedDualBranchGNN_AttentionFusion(keras.Model):
         seq = self.seq_transformer(seq, training=training)
         seq = self.seq_out(seq)
         seq_feat = self.seq_bottleneck(seq)
-
-     
-        '''
-        # Graph branch
-        gnn_nodes = self.gnn({'atom_features': nodes, 'pair_indices': edges, 'edge_weights': weights, 'molecule_indicator': prot_ids}, training=training)
-        gnn_nodes = self.gnn_proj(gnn_nodes)
-        gnn_feat = tf.math.unsorted_segment_mean(gnn_nodes, prot_ids, tf.reduce_max(prot_ids) + 1)
-        
-        gnn_feat = self.gnn_bottleneck(gnn_feat)
-
-        #Performance dropped with Resconnection
-        gnn_input = gnn_feat
-        gnn_feat = self.gnn_bottleneck(gnn_input) + gnn_input
-        ##-end of residual conne'''
         
         # Physio branch
         physio_feat = self.physio_proj(physio) #Physio + Blosum + sinu + pos-aware features 
         physio_feat = self.physio_bottleneck(physio_feat)
-
-
 
         #cnn feature 
         seq_cnn_feat = self.seq_cnn(seq_ids) #128 dim
         seq_cnn_feat =  self.seq_cnn_norm(seq_cnn_feat) #stabilizes the scale of activations across the features
         seq_cnn_feat = self.seq_cnn_dropout(seq_cnn_feat, training=training)
 
-        #new trick : Instead of letting CNN be a full branch, making it gate ProtT5:
+        # CNN Modulation
         seq_feat = seq_feat * (1 + cfg.cnn_gating_threshold * tf.tanh(seq_cnn_feat)) #gating trick(used in alphafold) for cnn+protT5
 
-        # Attention weighted feature fusion (how important is each branch) | seq_cnn_feat is not used here
-        '''fused = self.get_attention_weighted_feature_fused(training, seq_feat, gnn_feat, physio_feat, seq_cnn_feat)'''
-        
-        
-        # fused = self.get_attention_weighted_feature_fused(training, seq_feat, '',  physio_feat) #gnn feature removed
-
-        #Try Cross-Attention based feature fusion (Didn't work well)
-        # fused = self.get_cross_attention_weighted_feature_fused(training, seq_feat, gnn_feat, physio_feat)
-        
+       
         # Output
         return self.out(seq_feat + physio_feat)
-        '''return self.out(fused)'''
 
     def get_attention_weighted_feature_fused(self, training, seq_feat, gnn_feat, physio_feat, seq_cnn_feat):
         # concat_feats = tf.stack([seq_feat, gnn_feat, physio_feat, seq_cnn_feat], axis=1) #cnn based
@@ -434,12 +409,14 @@ def load_model_and_evaluate_test(
     Load a saved model from disk and evaluate on test_ds
     using the existing compute_metrics method.
     """
-    mertics = []
+    metrics = []
     datasets = data_util.load_datasets(datasets_index=datasets_index)
+    
     for model_index in datasets_index:
         model_dir = Path("model") / model_name / f"model_{model_index}"
 
-        _, _, test_f = datasets[model_index]
+        # _, _, test_f = datasets[model_index]
+        _, _, test_f = datasets[datasets_index.index(model_index)]
         test_ds = make_dataset(test_f)
 
         # Load model with required custom objects
@@ -461,9 +438,11 @@ def load_model_and_evaluate_test(
             model_path= f"model/{model_name}",
             model_index=model_index
         )
-        mertics.append(metric)
+        metrics.append(metric)
 
-    return mertics
+    print("All metrics:", metrics)
+
+    return metrics
 
 
 # --------------------------- Execute ---------------------------
@@ -536,7 +515,7 @@ def integrated_gradients(model, inputs, m_steps=32):
         total_grad_atom += grads[0]
         total_grad_phys += grads[1]
 
-    ig_atom = (atom - atom_base) * total_grad_atom / m_steps
+    ig_atom = (atom - atom_base) * total_grad_atom / m_steps #Input change * average sensitivity along the path
     ig_phys = (phys - phys_base) * total_grad_phys / m_steps
 
     return ig_atom, ig_phys
@@ -549,7 +528,7 @@ def compute_mean_integrated_gradients(model, dataset, m_steps=32):
     for inputs, _ in dataset:
         ig_atom, ig_phys = integrated_gradients(model, inputs, m_steps)
 
-        # Reduce per sample
+        # Reduce per sample | take mean absolute IG per feature across batch (otherwise negative and positive cancel out)
         ig_atom = tf.reduce_mean(tf.abs(ig_atom), axis=0)   # (1024,)
         ig_phys = tf.reduce_mean(tf.abs(ig_phys), axis=0)   # (84,)
 
@@ -567,36 +546,6 @@ def compute_mean_integrated_gradients(model, dataset, m_steps=32):
 
     return mean_ig_atom, mean_ig_phys
 
-
-
-def plot_modality_importance(mean_ig_atom, mean_ig_phys, save_path="./visualization/IG/modality_importance.png"):
-    atom_score = np.mean(mean_ig_atom)
-    phys_score = np.mean(mean_ig_phys)
-
-    plt.figure(figsize=(5,4))
-    plt.bar(["CNN Gated ProtT5 Features", "Physicochemical Features"],
-            [atom_score, phys_score],
-            color=["#1f77b4", "#d62728"])
-    plt.ylabel("Mean |Integrated Gradient|")
-    plt.title("Modality Contribution to MIC Prediction")
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=300)
-    plt.show()
-    print("Modality Importance - ProtT5:", atom_score, " Physio:", phys_score)
-
-def plot_top_physio(mean_ig_phys, labels, top_k=10, save_path="./visualization/IG/top_physio_features.png"):
-    idx = np.argsort(mean_ig_phys)[-top_k:]
-    plt.figure(figsize=(6,5))
-    plt.barh([labels[i] for i in idx], mean_ig_phys[idx], color="#d62728")
-    plt.xlabel("Mean |Integrated Gradient|")
-    plt.title("Top Physicochemical Drivers of MIC")
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=300)
-
-    print("Top Physio Features IG:")
-    for i in idx[::-1]:
-        print(f"  {labels[i]}: {mean_ig_phys[i]:.4f}")
-    plt.show()
 
 def compute_cnn_gating_contribution(model, dataset):
     """
@@ -636,30 +585,12 @@ def compute_cnn_gating_contribution(model, dataset):
 
     return cnn_diff, preds_with_cnn, preds_without_cnn
 
-def plot_cnn_gating_effect(cnn_diff, save_path="./visualization/IG/cnn_gating_effect.png"):
-    """
-    Plot CNN gating contribution per peptide.
-    """
-    plt.figure(figsize=(6,4))
-    plt.hist(cnn_diff, bins=30, color="#2ca02c", alpha=0.7)
-    plt.axvline(np.mean(cnn_diff), color='red', linestyle='--', label=f"Mean = {np.mean(cnn_diff):.3f}")
-    plt.xlabel("Prediction Difference (CNN ON - OFF)")
-    plt.ylabel("Number of Peptides")
-    plt.title("Contribution of CNN Gate to MIC Predictions")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=300)
-    plt.show()
-
-    print("CNN Gate Mean Contribution:", np.mean(cnn_diff))
-    print("CNN Gate Std Contribution:", np.std(cnn_diff))
 
 def plot_combined_contributions(model, dataset, physio_labels, save_path="./visualization/IG/combined_contributions_colored.png"):
     """
     Plot CNN gating effect, modality importance, and top physio features
     in a single figure with 3 subplots, with color-coded top physio features.
     """
-    import os
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
     # -------------------- CNN gating contribution --------------------
@@ -695,20 +626,21 @@ def plot_combined_contributions(model, dataset, physio_labels, save_path="./visu
     axs[0].axvline(cnn_mean, color='red', linestyle='--', label=f"Mean = {cnn_mean:.3f}")
     axs[0].set_xlabel("Prediction Diff (CNN ON - OFF)")
     axs[0].set_ylabel("Number of Peptides")
-    axs[0].set_title("CNN Gate Contribution")
+    axs[0].set_title("CNN Gate Contribution (A)")
     axs[0].legend()
 
     # 2. Modality importance
-    axs[1].bar(["CNN Gated ProtT5 Features", "Physicochemical Features"],
+               # 
+    axs[1].bar(["Sequence Embedding Features", "Sequence Descriptor Features"],
                modality_scores,
                color=["#1f77b4", "#d62728"])
     axs[1].set_ylabel("Mean |Integrated Gradient|")
-    axs[1].set_title("Modality Importance")
+    axs[1].set_title("Modality Importance (B)")
 
     # 3. Top physio features (color-coded)
     axs[2].barh(top_physio_labels, top_physio_scores, color=top_colors)
     axs[2].set_xlabel("Mean |Integrated Gradient|")
-    axs[2].set_title(f"Top {top_k} Physicochemical Drivers")
+    axs[2].set_title(f"Top {top_k} Sequence Descriptor Features (C)")
     axs[2].invert_yaxis()  # highest at top
 
     plt.tight_layout()
@@ -723,44 +655,67 @@ def plot_combined_contributions(model, dataset, physio_labels, save_path="./visu
         print(f"  {label}: {score:.4f}")
 
 
-
-
-if __name__ == "__main__":
-    model_name = "MoPro_Ablation_11_SEQ_branch_3_Physio"
-    index = 0
-    datasets_index = [index]
-
-
-    # metrics = execute(model_name=model_name, datasets_index=datasets_index)
-
-    # metrics = load_model_and_evaluate_test(model_name=model_name, datasets_index=datasets_index)
-    # print("All metrics:", metrics)
-
-    # model_path, config_path = get_model_path(model_name)
-    # data_util.save_results_table(metrics, filename=model_path / f"{model_name}_metrics_test.csv")
-
-    model = load_model(model_name, model_index=0)
-    _, _, test_f = data_util.load_datasets([0])[0]
+def compute_feature_contributions(model_name, model_index, save_path_base="./visualization/IG"):
+    model = load_model(model_name, model_index=model_index)
+    _, _, test_f = data_util.load_datasets([model_index])[0]
     test_ds = make_dataset(test_f)
 
-    # Compute CNN gating contribution
-    cnn_diff, preds_with_cnn, preds_without_cnn = compute_cnn_gating_contribution(model, test_ds)
-    # Plot
-    plot_cnn_gating_effect(cnn_diff, save_path="./visualization/IG/cnn_gating_effect.png")
+    
 
-    
-    
+    # Compute Integrated Gradients and plot modality importance and top physio features    
     physio_labels = (
     PHYSIO_LABELS +
     [f"BLOSUM_{aa}" for aa in list("ACDEFGHIKLMNPQRSTVWY")] +
     [f"PosEnc_{i+1}" for i in range(32)]
     )
-    mean_ig_atom, mean_ig_phys = compute_mean_integrated_gradients(model, test_ds)
-    plot_modality_importance(mean_ig_atom, mean_ig_phys, save_path="./visualization/IG/modality_importance.png")
-    plot_top_physio(mean_ig_phys, physio_labels, top_k=10, save_path="./visualization/IG/top_physio_features.png")
+
+    plot_combined_contributions(model, test_ds, physio_labels, save_path=os.path.join(save_path_base, "combined_contributions.png"))
+
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Train, Predict or Plot Feature Contribution.")
+    parser.add_argument(
+        "mode",
+        choices=["train", "predict", "plot"],
+        help="Mode to run: train, predict or visualize feature contributions."
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="MoPro",
+        help="Model name (default: MoPro)"
+    )
+    parser.add_argument(
+        "--datasets",
+        type=int,
+        nargs="+",
+        default=[0],
+        help="List of dataset indices (default: 0)"
+    )
+    args = parser.parse_args()
+
+    if args.mode == "train":
+        model_name = args.model
+        datasets_index = args.datasets
+        metrics = execute(model_name=model_name, datasets_index=datasets_index)
+    elif args.mode == "predict":
+        model_name = args.model
+        datasets_index = args.datasets
+        metrics = load_model_and_evaluate_test(model_name=model_name, datasets_index=datasets_index)
+    elif args.mode == "plot":
+        model_name = args.model
+        datasets_index = args.datasets
+        for model_index in datasets_index:
+            compute_feature_contributions(
+                model_name=model_name,
+                model_index=model_index,
+                save_path_base=f"./visualization/IG/fold_{model_index}"
+            )
+    else:
+        raise ValueError("Invalid mode. Choose from: train, predict, plot")
+
+
     
-    plot_combined_contributions(model, test_ds, physio_labels, save_path="./visualization/IG/combined_contributions.png")
-
-
     
     
