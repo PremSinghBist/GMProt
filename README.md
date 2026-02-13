@@ -12,7 +12,6 @@ For a comprehensive description of the approach, please refer to the paper: [lin
 
 The complete dataset is publicly available on **Zenodo**:
 - **DOI:** https://doi.org/10.5281/zenodo.18626920  
----
 
 ### 📁 Folder Structure
 ```bash
@@ -50,7 +49,6 @@ The original antimicrobial peptide dataset containing sequences across multiple 
 - *E. coli*
 - *S. aureus*
 All derived datasets were constructed from this base file.
----
 
 #### Dataset Attribution
 The original `grampa.csv` dataset is attributed to:
