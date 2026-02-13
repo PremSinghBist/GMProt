@@ -58,7 +58,7 @@ The original `grampa.csv` dataset is attributed to:
 
 ## Features
 
-- **Train** the MoPro model on one or more datasets.  
+- **Train** the ModProt model on one or more datasets.  
 - **Predict** activity values and evaluate model performance on test datasets.  
 - **Plot** feature contributions to interpret model predictions.  
 - Flexible handling of multiple datasets via indices.  

@@ -546,6 +546,44 @@ def compute_mean_integrated_gradients(model, dataset, m_steps=32):
 
     return mean_ig_atom, mean_ig_phys
 
+def compute_sequence_descriptor_submodality_scores(mean_ig_phys, physio_labels):
+    """
+    Compute mean integrated gradient (IG) scores for sub-modalities
+    within the sequence descriptor features: BLOSUM, Physicochemical, and Positional Encoding.
+
+    Parameters
+    ----------
+    mean_ig_phys : np.ndarray
+        Array of IG scores for all sequence descriptor features.
+    physio_labels : list of str
+        List of labels corresponding to each sequence descriptor feature.
+
+    Returns
+    -------
+    submodality_scores : dict
+        Dictionary with keys 'BLOSUM', 'Physicochemical', 'PositionalEncoding'
+        and values as mean IG scores for each sub-modality.
+    """
+    # Identify indices for each sub-modality
+    blosum_idx = [i for i, lbl in enumerate(physio_labels) if lbl.startswith("BLOSUM")]
+    posenc_idx = [i for i, lbl in enumerate(physio_labels) if lbl.startswith("PosEnc")]
+    
+    # Treat all other labels as physicochemical
+    phys_idx = [i for i in range(len(physio_labels)) if i not in blosum_idx + posenc_idx]
+
+    # Compute mean IG for each sub-modality
+    blosum_score = np.mean(mean_ig_phys[blosum_idx]) if blosum_idx else 0.0
+    posenc_score = np.mean(mean_ig_phys[posenc_idx]) if posenc_idx else 0.0
+    phys_score   = np.mean(mean_ig_phys[phys_idx]) if phys_idx else 0.0
+
+    # Return as dictionary
+    submodality_scores = {
+        "BLOSUM": blosum_score,
+        "Physico": phys_score,
+        "PositionalEncoding": posenc_score
+    }
+    return submodality_scores
+
 
 def compute_cnn_gating_contribution(model, dataset):
     """
@@ -602,6 +640,10 @@ def plot_combined_contributions(model, dataset, physio_labels, save_path="./visu
     mean_ig_atom, mean_ig_phys = compute_mean_integrated_gradients(model, dataset)
     modality_scores = [np.mean(mean_ig_atom), np.mean(mean_ig_phys)]
 
+    #Compute sub-modality scores Blosum , Physicochemical, Positional Encoding
+    submod_scores = compute_sequence_descriptor_submodality_scores(mean_ig_phys, physio_labels)
+    print("Submodality scores:", submod_scores)
+
     # -------------------- Top physio features --------------------
     top_k = 10
     top_idx = np.argsort(mean_ig_phys)[-top_k:]
@@ -619,7 +661,7 @@ def plot_combined_contributions(model, dataset, physio_labels, save_path="./visu
             top_colors.append("#d62728")  # Red for physio
 
     # -------------------- Plotting --------------------
-    fig, axs = plt.subplots(1, 3, figsize=(18,5))
+    fig, axs = plt.subplots(1, 4, figsize=(20,5), constrained_layout=True) #18,5 3
 
     # 1. CNN gating effect
     axs[0].hist(cnn_diff, bins=30, color="#2ca02c", alpha=0.7)
@@ -630,18 +672,25 @@ def plot_combined_contributions(model, dataset, physio_labels, save_path="./visu
     axs[0].legend()
 
     # 2. Modality importance
-               # 
-    axs[1].bar(["Sequence Embedding Features", "Sequence Descriptor Features"],
+    axs[1].bar(["SEQ Embedding Features", "SEQ Descriptor Features"],
                modality_scores,
                color=["#1f77b4", "#d62728"])
     axs[1].set_ylabel("Mean |Integrated Gradient|")
     axs[1].set_title("Modality Importance (B)")
 
-    # 3. Top physio features (color-coded)
-    axs[2].barh(top_physio_labels, top_physio_scores, color=top_colors)
-    axs[2].set_xlabel("Mean |Integrated Gradient|")
-    axs[2].set_title(f"Top {top_k} Sequence Descriptor Features (C)")
-    axs[2].invert_yaxis()  # highest at top
+    # 3. Sub-modality importance
+    axs[2].bar(list(submod_scores.keys()), list(submod_scores.values()),
+               color=["#1f77b4", "#d62728", "#2ca02c"])
+    axs[2].set_ylabel("Mean |Integrated Gradient|")
+    axs[2].set_title("Sub-modality Importance (C)")
+
+    # 4. Top physio features (color-coded)
+    axs[3].barh(top_physio_labels, top_physio_scores, color=top_colors)
+    axs[3].set_xlabel("Mean |Integrated Gradient|")
+    axs[3].set_title(f"Top {top_k} Sequence Descriptor Features (D)")
+    axs[3].invert_yaxis()  # highest at top
+
+    
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=300)
@@ -650,6 +699,9 @@ def plot_combined_contributions(model, dataset, physio_labels, save_path="./visu
     # -------------------- Print stats --------------------
     print("CNN Gate Mean Contribution:", cnn_mean, "Std:", cnn_std)
     print("Modality Importance - ProtT5:", modality_scores[0], " Physio:", modality_scores[1])
+    print("Sequence Descriptor Sub-modality Scores:")
+    for key, val in submod_scores.items():
+        print(f"  {key}: {val:.4f}")
     print("Top Physio Features IG (colored):")
     for label, score in zip(top_physio_labels[::-1], top_physio_scores[::-1]):
         print(f"  {label}: {score:.4f}")
@@ -710,7 +762,7 @@ if __name__ == "__main__":
             compute_feature_contributions(
                 model_name=model_name,
                 model_index=model_index,
-                save_path_base=f"./visualization/IG/fold_{model_index}"
+                save_path_base=f"./visualization/IG/foldnew_{model_index}"
             )
     else:
         raise ValueError("Invalid mode. Choose from: train, predict, plot")
