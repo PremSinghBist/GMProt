@@ -11,10 +11,7 @@ For a comprehensive description of the approach, please refer to the paper: [lin
 ## 📑 Data Availability
 
 The complete dataset is publicly available on **Zenodo**:
-
 - **DOI:** https://doi.org/10.5281/zenodo.18626920  
-- **Title:** *Gated Protein Language Modeling for Accurate Prediction of Antimicrobial Peptide Activity*
-
 ---
 
 ### 📁 Repository Structure
@@ -26,55 +23,38 @@ The complete dataset is publicly available on **Zenodo**:
 ├── five_fold_s_aureus/
 ├── protT5/
 └── grampa.csv
-
-
 ####  `alphafold_pdb_ecoli`
 Predicted three-dimensional peptide structures (PDB format) targeting *Escherichia coli*, generated using **AlphaFold2**.
-
 #### `alphafold_pdb_stap`
 Predicted peptide structures (PDB format) targeting *Staphylococcus aureus*, generated using **AlphaFold2**.
-
 ####  `fasta_ecoli` and `fasta_stap`
 FASTA-formatted peptide sequence datasets for:
 - *E. coli*
 - *S. aureus*
-
 ####  `five_fold_ecoli`
 Preprocessed datasets stored in `.pkl` format for model training.
-
 - Each file contains **five cross-validation splits**
 - Multiple `.pkl` files represent alternative feature configurations
 - See `readme.txt` for feature details
 - `ecoli_dataset.pkl` is the final dataset used for **ModProt** training
-
 #### `five_fold_s_aureus`
 Five-fold cross-validation datasets for *S. aureus*.
-
 ####  `protT5`
 Residue-level peptide embeddings computed using **ProtT5** for both:
 - *E. coli*
 - *S. aureus*
-
 ####  `grampa.csv`
 The original antimicrobial peptide dataset containing sequences across multiple bacterial species, including:
 - *E. coli*
 - *S. aureus*
-
 All derived datasets were constructed from this base file.
-
 ---
 
 #### Dataset Attribution
-
 The original `grampa.csv` dataset is attributed to:
-
 > **Deep learning regression model for antimicrobial peptide design**  
 > https://www.biorxiv.org/content/10.1101/692681v1.full
-
 ---
-
-
-
 
 ## Features
 
