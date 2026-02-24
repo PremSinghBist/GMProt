@@ -1,4 +1,4 @@
-# GMProt: Gated Language Protein Language Model for Prediction of Antimicrobial Peptide Activity
+# GMProt: Gated Modulation Protein Language Model for Prediction of Antimicrobial Peptide Activity
 
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
 
