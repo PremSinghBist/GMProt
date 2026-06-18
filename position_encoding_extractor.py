@@ -38,30 +38,27 @@ def positional_encoding_global(pe_padded, pe_mask):
 
 
 def pad_positional_encodings(pe_list, max_len=cfg.seq_max_len):
-    ''' 
-    pe_list :  list of positional‐encoding matrices of different lengths with dimension D
-    max_len :  maximum sequence length for padding
-
-    It Converts a fixed-size batch tensor of shape (N, max_len, D)
-    and a mask of shape (N, max_len)
-
-    returns:
-        padded: (N, max_len, D)
-        mask:   (N, max_len)
-    
+    '''Pad a list of positional encoding matrices to a common length.
+    Args:
+        pe_list: list of np.ndarray, each of shape (L_i, d)
+        max_len: int, maximum sequence length for padding
+        Returns:
+            padded: (N, max_len, D)
+            mask:   (N, max_len)
     '''
-    dim = pe_list[0].shape[1] #pe_list shape: [L*D] | D=32
+    dim = pe_list[0].shape[1] 
     total_seqs = len(pe_list)
 
-    #padded: A big tensor of [total_seqs, max_len, D] that holds all sequences padded with zeros
-    #mask:   A  tensor of [total_seqs, max_len] that holds 1.0 for real tokens and 0.0 for padding
-    padded = np.zeros((total_seqs, max_len, dim), dtype=np.float32) #padding with max_len=128
-    mask   = np.zeros((total_seqs, max_len), dtype=np.float32) #lets attention / pooling layers ignore fake padded positions.
+    padded = np.zeros((total_seqs, max_len, dim), dtype=np.float32) 
+    mask   = np.zeros((total_seqs, max_len), dtype=np.float32) 
 
     for index, pe in enumerate(pe_list):
-        seq_len = pe.shape[0] 
-        padded[index, :seq_len, :] = pe # Fill in the real tokens, other remaining are zeros 
-        mask[index, :seq_len] = 1.0   # 1 = real token, 0 = padding
+        # Slice the positional encoding if it exceeds max_len
+        seq_len = min(pe.shape[0], max_len) 
+        
+        # Pull only up to max_len tokens from the positional encoding matrix
+        padded[index, :seq_len, :] = pe[:seq_len, :] 
+        mask[index, :seq_len] = 1.0   
 
     return padded, mask
 
@@ -179,10 +176,13 @@ if __name__ == "__main__":
     # pe_global, sequences = extract_position_encoding('./data/ecoli_mic_normalized.csv')
 
     #staph
-    sinusoidal_encoding_path = './data/s_aureus_sinusoidal_encoding.csv'
-    pe_global, sequences = extract_position_encoding('./data/s_aureus_cleaned.csv')
-
-    # save_position_encoding(pe_global, sequences, sinusoidal_encoding_path)
+    # sinusoidal_encoding_path = './data/s_aureus_sinusoidal_encoding.csv'
+    # pe_global, sequences = extract_position_encoding('./data/s_aureus_cleaned.csv')
+    
+    #P. Aeruginosa
+    sinusoidal_encoding_path = './data/p_aeruginosa_sinusoidal_encoding.csv'
+    pe_global, sequences = extract_position_encoding('./data/p_aeruginosa_dataset.csv')
+    save_position_encoding(pe_global, sequences, sinusoidal_encoding_path)
     
     # To load later:
     encoding_dict = load_sinusoidal_encoding(sinusoidal_encoding_path)

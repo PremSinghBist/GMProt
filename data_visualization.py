@@ -359,9 +359,20 @@ def format_metrics_table(metrics_list, float_fmt="{:.4f}"):
 
     return "\n".join([header_line, divider] + body_lines)
 
+def save_p_aeruginosa_dataset(grampa_csv_path, save_path="data/p_aeruginosa_dataset.csv"):
+    df = read_grampa_csv(grampa_csv_path)
+    p_aur_df = df[df["bacterium"] == "P. aeruginosa"]
+    p_aur_df.to_csv(save_path, index=False)
+    print(f"P. aeruginosa dataset extracted from {grampa_csv_path}")
+    print(f"Total sequences for P. aeruginosa: {len(p_aur_df)}")
+    print(f"P. aeruginosa dataset saved to {save_path}")
+    
+
 
 
 if __name__ == "__main__":
+    P_AERUGINOSA_CSV = "data/p_aeruginosa_dataset.csv"
     GRAMPA_CSV  = "data/grampa.csv"
     ECOLI_CSV  = "data/ecoli_normalized.csv"
-    perform_grampa_data_analysis(ECOLI_CSV)
+    # perform_grampa_data_analysis(ECOLI_CSV)
+    # save_p_aeruginosa_dataset(GRAMPA_CSV, P_AERUGINOSA_CSV)

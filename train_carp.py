@@ -52,47 +52,62 @@ def set_global_seed(seed: int = 42):
     np.random.seed(seed)
     tf.random.set_seed(seed)
 
+set_global_seed(cfg.seed)
+
+
+#------------LOAD CARP EMBEDDINGS----------------
+SEQ_CARP_EMB_DICT = np.load("./data/carp/carp_ecoli_embeddings.npy", allow_pickle=True).item()
+
+
+def get_carp_embedding(seq_batch):
+    def lookup(seq):
+        seq = seq.decode("utf-8")
+        return SEQ_CARP_EMB_DICT.get(seq, np.zeros(1280, dtype=np.float32))  # fallback
+
+    embeddings = tf.py_function(
+        func=lambda x: np.stack([lookup(s) for s in x.numpy()]),
+        inp=[seq_batch],
+        Tout=tf.float32
+    )
+    embeddings.set_shape([None, 1280])  # CARP Embedding have 1280 dim
+    return embeddings
 
 
 # --------------------------- Dataset ---------------------------
 def generator(X):
     """Yield each sample for tf.data"""
-    for emb, p_feat, blosum_feat, sinu_feat, seq, y in X:
-        # rows, cols = np.where(cm > 0) #return row array, col array | Each (rows[i], cols[i]) is an edge from node row[i] to node cols[i]
+    for emb, cm, p_feat, blosum_feat, sinu_feat, seq, y in X:
+        rows, cols = np.where(cm > 0) #return row array, col array | Each (rows[i], cols[i]) is an edge from node row[i] to node cols[i]
         
         #convert two 1D array into edge list [[0, 1],[1, 3] ] ...| shape num_edges x 2 | needed for GAT Input
-        # edges = np.stack([rows, cols], axis=1).astype(np.int64) if rows.size else np.zeros((0, 2), dtype=np.int64)
-        # weights = np.ones(len(rows), dtype=np.float32) if rows.size else np.zeros((0,), dtype=np.float32)
+        edges = np.stack([rows, cols], axis=1).astype(np.int64) if rows.size else np.zeros((0, 2), dtype=np.int64)
+        weights = np.ones(len(rows), dtype=np.float32) if rows.size else np.zeros((0,), dtype=np.float32)
         p_feat_updated = np.concatenate([p_feat, blosum_feat, sinu_feat], axis=0).astype(np.float32) 
-        # yield emb, edges, weights, p_feat_updated, seq, np.array([y], dtype=np.float32)
-        yield emb, p_feat_updated, seq, np.array([y], dtype=np.float32)
+        yield emb, edges, weights, p_feat_updated, seq, np.array([y], dtype=np.float32)
 
 def make_dataset(X, shuffle=False):
     emb_spec = tf.TensorSpec(shape=[None, EMB_DIM], dtype=tf.float32)
-    # edges_spec = tf.TensorSpec(shape=[None, 2], dtype=tf.int64)
-    # weights_spec = tf.TensorSpec(shape=[None], dtype=tf.float32)
+    edges_spec = tf.TensorSpec(shape=[None, 2], dtype=tf.int64)
+    weights_spec = tf.TensorSpec(shape=[None], dtype=tf.float32)
     physio_spec = tf.TensorSpec(shape=[PHYSIO_DIM], dtype=tf.float32)
 
     label_spec = tf.TensorSpec(shape=(1,), dtype=tf.float32)
     seq_spec = tf.TensorSpec(shape=(), dtype=tf.string)
     ds = tf.data.Dataset.from_generator(
         lambda: generator(X),
-        # output_signature=(emb_spec, edges_spec, weights_spec, physio_spec, seq_spec, label_spec)
-        output_signature=(emb_spec, physio_spec, seq_spec, label_spec)
+        output_signature=(emb_spec, edges_spec, weights_spec, physio_spec, seq_spec, label_spec)
     )
 
     if shuffle:
         ds = ds.shuffle(buffer_size=cfg.shuffle_buffer_size, seed=cfg.seed)
 
     ds = ds.ragged_batch(cfg.batch_size)
-    ds = ds.map(lambda emb,  physio, seq, lbl: prepare_batch(emb, physio, seq, lbl),
+    ds = ds.map(lambda emb, edges, weights, physio, seq, lbl: prepare_batch(emb, edges, weights, physio, seq, lbl),
                 num_parallel_calls=tf.data.AUTOTUNE).prefetch(tf.data.AUTOTUNE)
     return ds
 
-def prepare_batch(batched_emb, batched_physio,batched_seq, batched_labels):
+def prepare_batch(batched_emb, batched_edges, batched_weights, batched_physio,batched_seq, batched_labels):
     '''
-       -Documentation outdated , no more edges and weights 
-       
         You have a batch of graphs represented as ragged tensors(variable lenghts).
         Each graph has its own set of nodes and edges. Here Node features are ProtT5 embeddings.
         Edges are derived from contact maps.
@@ -131,31 +146,34 @@ def prepare_batch(batched_emb, batched_physio,batched_seq, batched_labels):
 
     num_nodes = batched_emb.row_lengths() #tf.RaggedTensor |  Shape: [batch_size, None, 1024] | (None: number of seqs in this batch)
 
-    # num_edges = batched_edges.row_lengths() #[[1, 2], [0, 2, 5], [2,3]] -> [2, 3, 2] number of edges per graph in batch
+    num_edges = batched_edges.row_lengths() #[[1, 2], [0, 2, 5], [2,3]] -> [2, 3, 2] number of edges per graph in batch
     nodes_flat = batched_emb.merge_dims(0, 1) #[batch, nodes, features] -> [total_nodes, features]
-    # edges_flat = batched_edges.merge_dims(0, 1)
-    # weights_flat = batched_weights.merge_dims(0, 1)
+    edges_flat = batched_edges.merge_dims(0, 1)
+    weights_flat = batched_weights.merge_dims(0, 1)
 
     #Added 0 ,  cumulative sum of num_nodes excluding last element. eg: [0, 2, 4, 5] ->[0, 2, 6, 11] 
     offsets = tf.concat([[0], tf.cumsum(num_nodes)[:-1]], axis=0) #offsets to adjust edge indices for batching
     
-    # edge_rowids = batched_edges.value_rowids() #Get which graph, each edge belongs to in the batch
+    edge_rowids = batched_edges.value_rowids() #Get which graph, each edge belongs to in the batch
    
     #“Pick rows from a tensor based on an index list. |  gather(input, indices)”
-    # edge_offsets = tf.gather(offsets, edge_rowids) #get offset for each edge based on which graph it belongs to
-    # edges_flat = edges_flat + tf.cast(tf.expand_dims(edge_offsets, axis=-1), edges_flat.dtype) #adjust edge indices based on node offsets in the batch
+    edge_offsets = tf.gather(offsets, edge_rowids) #get offset for each edge based on which graph it belongs to
+    edges_flat = edges_flat + tf.cast(tf.expand_dims(edge_offsets, axis=-1), edges_flat.dtype) #adjust edge indices based on node offsets in the batch
    
     prot_ids = tf.repeat(tf.range(tf.shape(num_nodes)[0]), num_nodes) #indicator for which node belongs to which graph in the batch
     prot_ids = tf.cast(prot_ids, tf.int32)
     physio_flat = tf.cast(batched_physio, tf.float32)
 
+    seq_raw = tf.strings.strip(batched_seq)
+    
     inputs = {
         'atom_features': nodes_flat,
-        # 'pair_indices': edges_flat,
-        # 'edge_weights': weights_flat,
+        'pair_indices': edges_flat,
+        'edge_weights': weights_flat,
         'molecule_indicator': prot_ids,
         'physio_features': physio_flat,
-        'seq_ids': seq_ids_padded
+        'seq_ids': seq_ids_padded,
+        'seq_raw': seq_raw
     }
     return inputs, labels
 
@@ -176,17 +194,20 @@ class ImprovedDualBranchGNN_AttentionFusion(keras.Model):
         )
         self.seq_out = layers.Dense(cfg.seq_dense2, activation=cfg.seq_out_A)
         self.seq_bottleneck = layers.Dense(cfg.seq_bottleneck_dim, activation=cfg.seq_bottleneck_A)
+        
+        #CARP Embedding Projection to 128 Dim with Gelu 
+        self.seq_carp_emb_proj = layers.Dense(cfg.seq_bottleneck_dim, activation=cfg.seq_carp_bottleneck_A)
 
         # **Residual Dense
         # self.seq_skip_dense = layers.Dense(128)  # performance dropped 
         
         # Graph branch
-        '''self.gnn = GraphAttentionNetwork(
+        self.gnn = GraphAttentionNetwork(
             atom_dim=EMB_DIM, hidden_units=cfg.gnn_hidden,
-            num_heads=cfg.gnn_heads, num_layers=cfg.gnn_layers)'''
+            num_heads=cfg.gnn_heads, num_layers=cfg.gnn_layers)
         
-        # self.gnn_proj = layers.Dense(cfg.gnn_dense, activation=cfg.gnn_proj_A)
-        # self.gnn_bottleneck = layers.Dense(cfg.gnn_bottleneck_dim, activation=cfg.gnn_bottleneck_A) 
+        self.gnn_proj = layers.Dense(cfg.gnn_dense, activation=cfg.gnn_proj_A)
+        self.gnn_bottleneck = layers.Dense(cfg.gnn_bottleneck_dim, activation=cfg.gnn_bottleneck_A) 
         
         # Physio branch
         self.physio_proj = layers.Dense(cfg.physio_proj, activation=cfg.physio_proj_A) 
@@ -277,11 +298,13 @@ class ImprovedDualBranchGNN_AttentionFusion(keras.Model):
 
     def call(self, inputs, training=False):
         nodes = inputs['atom_features'] # (total_nodes, EMB_DIM): ProtT5 embeddings (residue label emb)
-        # edges = inputs['pair_indices'] #binary contact map edges
-        # weights = inputs['edge_weights'] #binary edge weights (distance-based)
+        edges = inputs['pair_indices'] #binary contact map edges
+        weights = inputs['edge_weights'] #binary edge weights (distance-based)
         prot_ids = inputs['molecule_indicator'] #indicator index for sequence/protein id in batch
         physio = inputs['physio_features']
         seq_ids = inputs['seq_ids']
+        seq_raw = inputs['seq_raw'] #Added new one for raw embeedings lookup from carp
+        
 
         # Sequence branch
         mean_pool = tf.math.unsorted_segment_mean(nodes, prot_ids, tf.reduce_max(prot_ids) + 1) #It computes one graph-level embedding per protein by averaging all node embeddings that belong to the same protein.
@@ -298,22 +321,24 @@ class ImprovedDualBranchGNN_AttentionFusion(keras.Model):
         seq_cnn_feat = self.seq_cnn(seq_ids) #128 dim
         seq_cnn_feat =  self.seq_cnn_norm(seq_cnn_feat) #stabilizes the scale of activations across the features
         seq_cnn_feat = self.seq_cnn_dropout(seq_cnn_feat, training=training)
-
-        # Gated Modulation Fusion
-        seq_feat = seq_feat * (1 + cfg.cnn_gating_threshold * tf.tanh(seq_cnn_feat)) #gating trick(used in alphafold) for cnn+protT5
-
-        # Fusion based output testing(Ablation Test Cross Attention Fusion)
-        '''fused = self.get_cross_attention_weighted_feature_fused(training=training, seq_feat=seq_feat, physio_feat=physio_feat) #gnn feature removed (Perf. dropped)
-        return self.out(fused)'''
-
-        #Attention weighted fusion 
-        '''fused = self.get_attention_weighted_feature_fused(training=training, seq_feat=seq_feat,  physio_feat=physio_feat, seq_cnn_feat=seq_cnn_feat) 
-        return self.out(fused)'''
+        
+        #-----------CARP Embedding Execution------------------
+        carp_cnn_feat = get_carp_embedding(seq_raw) #1280 dim | Get CARP embedding for each sequence in the batch based on the input sequence IDs. It uses a lookup mechanism to retrieve the corresponding CARP embedding from a pre-loaded dictionary. If a sequence is not found in the dictionary, it returns a zero vector of the same dimension as the CARP embeddings (1280). The resulting tensor has a shape of (batch_size, 1280), where each row corresponds to the CARP embedding of a sequence in the batch.
+        carp_cnn_feat = self.seq_carp_emb_proj(carp_cnn_feat) #Project CARP embedding to 128 dim to match other features for fusion   
+    
+        # CNN Modulation
+        # seq_feat = seq_feat * (1 + cfg.cnn_gating_threshold * tf.tanh(seq_cnn_feat)) #gating trick(used in alphafold) for cnn+protT5
+        # seq_feat = carp_cnn_feat* (1 + cfg.cnn_gating_threshold * tf.tanh(seq_cnn_feat)) + seq_feat * (1 + cfg.cnn_gating_threshold * tf.tanh(seq_cnn_feat))
+        # seq_feat = carp_cnn_feat + seq_feat + tf.tanh(seq_cnn_feat)
+        # seq_feat =  seq_feat + tf.tanh(carp_cnn_feat*seq_feat) + cfg.cnn_gating_threshold*tf.tanh(seq_cnn_feat)
+        # seq_feat =  seq_feat + cfg.cnn_gating_threshold*carp_cnn_feat*seq_feat + cfg.cnn_gating_threshold*tf.tanh(seq_cnn_feat)
+        # seq_feat =  seq_feat + tf.tanh(0.3*carp_cnn_feat* seq_cnn_feat) #carp_s4
+        seq_feat =  seq_feat * tf.tanh(0.3*carp_cnn_feat* seq_cnn_feat) #carp_s5
 
         # Output
         return self.out(seq_feat + physio_feat)
 
-    def get_attention_weighted_feature_fused(self, training, seq_feat, physio_feat, seq_cnn_feat):
+    def get_attention_weighted_feature_fused(self, training, seq_feat, gnn_feat, physio_feat, seq_cnn_feat):
         # concat_feats = tf.stack([seq_feat, gnn_feat, physio_feat, seq_cnn_feat], axis=1) #cnn based
         # concat_feats = tf.stack([seq_feat, gnn_feat, physio_feat], axis=1)
         concat_feats = tf.stack([seq_feat,  physio_feat], axis=1)
@@ -324,9 +349,10 @@ class ImprovedDualBranchGNN_AttentionFusion(keras.Model):
         fused = self.fuse_dropout(fused, training=training)
         return fused
     
-    def get_cross_attention_weighted_feature_fused(self, training, seq_feat, physio_feat):
+    def get_cross_attention_weighted_feature_fused(self, training, seq_feat, gnn_feat, physio_feat):
         fused, attn_scores = self.cross_attn_fusion(
             seq_feat,
+            gnn_feat,
             physio_feat,
             training=training
 
@@ -387,6 +413,7 @@ def train_model(train_f, val_f, test_f, model_name, mdl_index):
     )
     
     
+
     model_path, config_path = get_model_path(model_name)
    
     cfg.save_config(config_path) #Save configuration Parameters
@@ -396,7 +423,7 @@ def train_model(train_f, val_f, test_f, model_name, mdl_index):
     callbacks = [
         EarlyStopping(monitor="val_rmse", mode="min", patience=cfg.patience, restore_best_weights=True),
         ModelCheckpoint(str(model_path / f"model_{mdl_index}"), save_best_only=True, monitor='val_rmse', mode='min'),
-        ReduceLROnPlateau(monitor="val_rmse", factor=0.5, patience=cfg.patience, min_lr=1e-6),
+        ReduceLROnPlateau(monitor="val_rmse", factor=0.5, patience=50, min_lr=1e-6),
         ValPearsonCallback(val_ds, val_pearson_history)
     ]
 
@@ -412,17 +439,17 @@ def train_model(train_f, val_f, test_f, model_name, mdl_index):
 
 
     metrics = compute_metrics(model, test_ds, model_path, model_index=mdl_index)
-    print(f"[Fold {mdl_index} ] Test metrics: {metrics} ")
+    print(f"[Fold {mdl_index}] Test metrics: {metrics}")
     return model, metrics
 
 def load_model_and_evaluate_test(
-    model_name, datasets_index=[0], dataset_path=''):
+    model_name, datasets_index=[0]):
     """
     Load a saved model from disk and evaluate on test_ds
     using the existing compute_metrics method.
     """
     metrics = []
-    datasets = data_util.load_datasets(datasets_index=datasets_index, dataset_path=dataset_path)
+    datasets = data_util.load_datasets(datasets_index=datasets_index)
     
     for model_index in datasets_index:
         model_dir = Path("model") / model_name / f"model_{model_index}"
@@ -453,25 +480,14 @@ def load_model_and_evaluate_test(
         metrics.append(metric)
 
     print("All metrics:", metrics)
-    
-    #Saves the metrics results to a CSV file for later analysis or reporting.
-    metrics_save_path = f"model/{model_name}/metrics_results.csv"
-    data_util.save_results_table(metrics, filename=metrics_save_path)
-    
 
     return metrics
 
 
 # --------------------------- Execute ---------------------------
-def execute(model_name, datasets_index=[0], save_file='metrics_results.csv', dataset_path='', seed=42):
-    set_global_seed(seed) #Test for randomness 
-    
+def execute(model_name, datasets_index=[0], save_file='metrics_results.csv', dataset_path=data_util.DATASET_PATH_ECOLI_PROTT5):
     datasets = data_util.load_datasets(datasets_index=datasets_index, dataset_path=dataset_path)
     all_metrics = []
-    
-    if seed:
-        model_name = f"{model_name}_seed{seed}"
-        
     for i, (train_f, val_f, test_f) in enumerate(datasets):
         _, metrics = train_model(train_f, val_f, test_f, model_name, i)
         all_metrics.append(metrics)
@@ -501,9 +517,8 @@ def load_model(model_name, model_index):
     print(f"*******Loaded Model Summary****** {model.summary()}")
     return model
 
-def load_input_for_integrated_gradients(datasets_index=[0], dataset_path=''):
-    datasets = data_util.load_datasets(datasets_index=datasets_index, dataset_path=dataset_path)
-    
+def load_input_for_integrated_gradients(datasets_index=[0]):
+    datasets = data_util.load_datasets(datasets_index=datasets_index)
     for i, (train_f, val_f, test_f) in enumerate(datasets):
         test_ds = make_dataset(test_f)
         for inputs, labels in test_ds:
@@ -731,11 +746,9 @@ def plot_combined_contributions(model, dataset, physio_labels, save_path="./visu
         print(f"  {label}: {score:.4f}")
 
 
-def compute_feature_contributions(model_name, model_index, save_path_base="./visualization/IG", dataset_path=''):
+def compute_feature_contributions(model_name, model_index, save_path_base="./visualization/IG"):
     model = load_model(model_name, model_index=model_index)
-    _, _, test_f = data_util.load_datasets([model_index], dataset_path=dataset_path)[0]
-    
-    
+    _, _, test_f = data_util.load_datasets([model_index])[0]
     test_ds = make_dataset(test_f)
 
     
@@ -752,19 +765,6 @@ def compute_feature_contributions(model_name, model_index, save_path_base="./vis
 
 
 if __name__ == "__main__":
-    compute_feature_contributions(model_name="ecoli_ProtT5", model_index=0, 
-                                  dataset_path=data_util.DATASET_PATH_ECOLI_PROTT5,
-                                  save_path_base="./result/interpretability")
-    import sys; sys.exit("Terminated")
-    dataset_path = data_util.DATASET_PATH_P_AERUGINOSA_PROTT5_80_10
-    # dataset_path = data_util.DATASET_PATH_P_AERUGINOSA_PROTT5_70_15
-    
-    # dataset_path = data_util.DATASET_PATH_SAUREUS_PROTT5_70_15
-    # dataset_path = data_util.DATASET_PATH_SAUREUS_PROTT5_80_10
-    # dataset_path = data_util.DATASET_PATH_ECOLI_PROTT5
-    # dataset_path = data_util.DATASET_PATH_ECOLI_PROTBERT
-    # dataset_path = data_util.DATASET_PATH_ECOLI_ESM2
-    
     parser = argparse.ArgumentParser(description="Train, Predict or Plot Feature Contribution.")
     parser.add_argument(
         "mode",
@@ -786,17 +786,14 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    
-    
     if args.mode == "train":
         model_name = args.model
         datasets_index = args.datasets
-        # for seed in cfg.seeds: #Test for randomness
-        metrics = execute(model_name=model_name, datasets_index=datasets_index, dataset_path=dataset_path, seed=cfg.seed)
+        metrics = execute(model_name=model_name, datasets_index=datasets_index)
     elif args.mode == "predict":
         model_name = args.model
         datasets_index = args.datasets
-        metrics = load_model_and_evaluate_test(model_name=model_name, datasets_index=datasets_index, dataset_path=dataset_path)
+        metrics = load_model_and_evaluate_test(model_name=model_name, datasets_index=datasets_index)
     elif args.mode == "plot":
         model_name = args.model
         datasets_index = args.datasets

@@ -1,6 +1,7 @@
 from Bio.Align import substitution_matrices
 import numpy as np
 import pandas as pd
+from typing import Dict
 
 # --------------------------------------------------
 # 1. Load BLOSUM62 once
@@ -109,10 +110,14 @@ if __name__ == "__main__":
     output_csv = "data/ecoli_blosum62_features.csv"'''
 
     #Staph aureus
-    input_csv = "data/s_aureus_cleaned.csv"
-    output_csv = "data/s_aureus_blosum62_features.csv"
+    # input_csv = "data/s_aureus_cleaned.csv"
+    # output_csv = "data/s_aureus_blosum62_features.csv"
+    
+    #P. Aeruginosa
+    input_csv='./data/p_aeruginosa_dataset.csv' 
+    output_csv = "data/p_aeruginosa_blosum62_features.csv"
 
-    # compute_blosum62_features(input_seqs_csv=input_csv, output_csv=output_csv)
+    compute_blosum62_features(input_seqs_csv=input_csv, output_csv=output_csv)
     
     blosum_dict = load_blosum62_features(csv_path=output_csv)
     print(list(blosum_dict.items())[:2])

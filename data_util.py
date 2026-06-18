@@ -16,28 +16,50 @@ import position_aware_features as PAF
 EMB_DIM = 1024
 #E.coli files
 CONTACT_MAP_FILE = "data/ecoli_contact_map.csv"
-SINUSOIDAL_ENCODING_FILE = './data/ecoli_sinusoidal_encoding.csv'
-EMBEDDING_FILE_PROTT5 = "data/prott5/prott5_ecoli_residue_level.npz"
-EMBEDDING_FILE_PROTBERT = "data/prot_bertprot_bert/protbert_ecoli_residue_level.npz"
-EMBEDDING_FILE_ESM2 = "data/esm2esm2_t33_650M_UR50D/esm2_ecoli_residue_level.npz"
-PHYSIO_CHEM_FILE = 'data/ecoli_phyiochem.csv'
-BLOSUM62_FILE  = "data/ecoli_blosum62_features.csv"
+
+EMBEDDING_FILE_ECOLI_PROTT5 = "data/embed/prott5_ecoli_residue_level.npz"
+EMBEDDING_FILE_ECOLI_PROTBERT = "data/embed/protbert_ecoli_residue_level.npz"
+EMBEDDING_FILE_ECOLI_ESM2 = "data/embed/esm2_ecoli_residue_level.npz"
+EMBEDDING_FILE_P_AERUGINOSA_PROTT5 = "./data/embed/prott5_p_aeruginosa_residue_level.npz"
+
+PHYSIO_CHEM_FILE_ECOLI = 'data/ecoli_phyiochem.csv'
+SINUSOIDAL_ENCODING_FILE_ECOLI = './data/ecoli_sinusoidal_encoding.csv'
+BLOSUM62_FILE_ECOLI  = "data/ecoli_blosum62_features.csv"
+DATASET_CSV_ECOLI = "./data/ecoli_dataset.csv"
+
+PHYSIO_CHEM_FILE_P_AERUGINOSA = 'data/p_aeruginosa_phyiochem.csv'
+SINUSOIDAL_ENCODING_FILE_P_AERUGINOSA = './data/p_aeruginosa_sinusoidal_encoding.csv'
+BLOSUM62_FILE_P_AERUGINOSA  = "data/p_aeruginosa_blosum62_features.csv"
+
+
 DATASET_PATH_ECOLI_PROTT5 = "data/five_fold_ecoli/ecoli_prott5_based_datasets.pkl"
-DATASET_PATH_ECOLI_PROTBERT = "data/five_fold_ecoli/ecoli_protbert_based_datasets.pkl"
+DATASET_PATH_ECOLI_PROTBERT = "./data/five_fold_ecoli/ecoli_protbert_based_datasets.pkl"
 DATASET_PATH_ECOLI_ESM2 = "data/five_fold_ecoli/ecoli_esm2_based_datasets.pkl"
-DATSET_SIZE = [3259, 815, 719] #train, val, test | total 4793
-POSITION_AWARE_FILE = "./data/position_aware_features.csv" #Currently not used due to performance issues
 
+DATASET_PATH_P_AERUGINOSA_PROTT5_70_15 = "data/five_fold_p_aeruginosa/p_aeruginosa_prott5_based_datasets_70_15_15.pkl"
+DATASET_PATH_P_AERUGINOSA_PROTT5_80_10 = "data/five_fold_p_aeruginosa/p_aeruginosa_prott5_based_datasets_80_10_10.pkl"
+DATASET_CSV_P_AERUGINOSA = "./data/p_aeruginosa_dataset.csv"
 
-#sTaphylococcus aureus files
-'''CONTACT_MAP_FILE = "data/s_aureus_contact_map.csv"
-SINUSOIDAL_ENCODING_FILE = './data/s_aureus_sinusoidal_encoding.csv'
-PHYSIO_CHEM_FILE = 'data/s_aureus_phyiochem.csv'
-EMBEDDING_FILE = "data/prott5/prott5_s_aureus_residue_level.npz"
-BLOSUM62_FILE = "data/s_aureus_blosum62_features.csv"
-DATASET_PATH = "data/five_fold_s_aureus/s_aureus_datasets.pkl"
+DATASET_PATH_SAUREUS_PROTT5_80_10 = "data/five_fold_s_aureus/s_aureus_prott5_based_datasets_80_10_10.pkl"
+DATASET_PATH_SAUREUS_PROTT5_70_15 = "data/five_fold_s_aureus/s_aureus_prott5_based_datasets_70_15_15.pkl"
+
+# DATSET_SIZE = [3259, 815, 719] ##Ecoli train, val, test | total 4793 
+# DATSET_SIZE = [4469, 248, 249]  #Original P. Aeruginosa size 4966 total ,  80:10:10 
+#DATSET_SIZE = [3478, 745, 743] #Original P. Aeruginosa  4966 with 70:15:15 split
+# DATSET_SIZE = [2178, 272, 272] #2722 Cleaned P. Aeruginosa with 80:10:10 split | 
+# DATSET_SIZE = [1905, 409, 408] #2722 Cleaned P. Aeruginosa with 70:15:15 split
 # DATSET_SIZE = [3067, 657, 657] #train, val, test | total 4381(70:15:15) S_aureus
-DATSET_SIZE = [3505, 438, 438] #train, val, test | total 4381(80:10:10) S_aureus'''
+DATSET_SIZE = [3505, 438, 438] #train, val, test | total 4381(80:10:10) S_aureus
+
+POSITION_AWARE_FILE_ECOLI = "./data/position_aware_features.csv" #Currently not used due to performance issues
+
+
+#Staphylococcus Aureus files
+SINUSOIDAL_ENCODING_FILE_SAUREUS = './data/s_aureus_sinusoidal_encoding.csv'
+PHYSIO_CHEM_FILE_SAUREUS = 'data/s_aureus_phyiochem.csv'
+EMBEDDING_FILE_SAUREUS_PROTT5 = "data/embed/prott5_s_aureus_residue_level.npz"
+BLOSUM62_FILE_SAUREUS = "data/s_aureus_blosum62_features.csv"
+DATASET_CSV_SAUREUS = "./data/s_aureus_dataset.csv"
 
 
 
@@ -53,11 +75,11 @@ def stratified_train_val_test_splits(
     max_attempts=100
 ):  
     '''
-    Features tuple :  emb, cm, physio_feature, blosum_feature, sinu_feature, seq, mic
+    Features tuple :  emb, , physio_feature, blosum_feature, sinu_feature, seq, mic
     '''
     assert train_size + val_size + test_size == len(features)
 
-    mic_values = np.array([item[6] for item in features])
+    mic_values = np.array([item[5] for item in features])
     indices = np.arange(len(features))
 
     kbd = KBinsDiscretizer(
@@ -163,22 +185,34 @@ def load_embeddings(filepath):
 # ============================================================
 # DATA
 # ============================================================
-def load_features(normalize_features=True, embedding_file=None):
+def load_features(normalize_features=True, embedding_file=None, blosum_csv='', physio_csv='', sinusoidal_csv='', dataset_csv=''):
     '''
     Returns:
-        features: List [emb, cm, physio_feature, blosum_feature, sinu_feature, seq, mic]
-        stats: dict with normalization statistics
+    features: List[
+        emb,
+        physio_feature,
+        blosum_feature,
+        sinu_feature,
+        seq,
+        mic
+    ]
+        
+        Note CONTACT_MAP_FILE is obsolete and not used (Structural features do not improve performance)
     '''
-    df = pd.read_csv(CONTACT_MAP_FILE)
+    # df = pd.read_csv(CONTACT_MAP_FILE)
+    df = pd.read_csv(dataset_csv) #eg: p_aeruginosa_dataset.csv
+    mic_dict = dict(zip(df['sequence'], df['value']))
+    
+    
     seqs, _, embs = load_embeddings(embedding_file) #ProtT5/ProtBert/ESM2 embeddings
     print(f"Embeeding 1st shape: {np.array(embs[0]).shape}")
 
-    blosum_dict = load_blosum62_features(csv_path=BLOSUM62_FILE) #20 features
-    physio_dict = PFE.load_physio_features_as_numpy_all(PHYSIO_CHEM_FILE) #32 features
+    blosum_dict = load_blosum62_features(csv_path=blosum_csv) #20 features
+    physio_dict = PFE.load_physio_features_as_numpy_all(physio_csv) #32 features
 
 
     # Load sinusoidal positional encodings | dict[Seq1: np.ndarray (32,), ...]
-    sinusoidal_encoding_dict = PEE.load_sinusoidal_encoding(SINUSOIDAL_ENCODING_FILE)
+    sinusoidal_encoding_dict = PEE.load_sinusoidal_encoding(sinusoidal_csv)
 
     #postion aware features | Performance adverse
     # position_aware_dict = PAF.load_feature_csv_as_dict(POSITION_AWARE_FILE)
@@ -193,7 +227,13 @@ def load_features(normalize_features=True, embedding_file=None):
     # Load raw features
     # -------------------------------
     for seq, emb in zip(seqs, embs):
-        cm, mic = get_contact_map(seq, df)#mic values are normalized between 0 and 1
+        # cm, mic = get_contact_map(seq, df)#mic values are normalized between 0 and 1
+        
+        if seq not in mic_dict:
+            raise ValueError(f"{seq} missing in dataset")
+        
+        mic = mic_dict[seq]  # 'mic' value exist with name 'value' in dataset csv file
+        
 
         emb = np.asarray(emb, np.float32)
         if emb.ndim == 1:
@@ -207,7 +247,8 @@ def load_features(normalize_features=True, embedding_file=None):
         sinu_feature = sinusoidal_encoding_dict[seq].astype(np.float32)
         # position_aware_feature = position_aware_dict[seq].astype(np.float32)
 
-        features.append([emb, cm, physio_feature, blosum_feature, sinu_feature, seq, mic])
+        # features.append([emb, cm, physio_feature, blosum_feature, sinu_feature, seq, mic])
+        features.append([emb, physio_feature, blosum_feature, sinu_feature, seq, mic])
         physio_list.append(physio_feature)
         blosum_list.append(blosum_feature)
         sinusoidal_encoding_list.append(sinusoidal_encoding_dict[seq])
@@ -229,10 +270,10 @@ def load_features(normalize_features=True, embedding_file=None):
         
         # Replace raw values with normalized ones
         for i in range(len(features)):
-            features[i][2] = physio_norm[i] #Physio index 2
-            features[i][3] = blosum_norm[i] #Blosum index 3
-            features[i][4] = sino_norm[i]   # Sinusoidal index 4
-            # features[i][5] = position_aware_norm[i] # Position aware index 5
+            features[i][1] = physio_norm[i] #Physio index 1
+            features[i][2] = blosum_norm[i] #Blosum index 2
+            features[i][3] = sino_norm[i]   # Sinusoidal index 3
+            # features[i][4] = position_aware_norm[i] # Position aware index 4
     
     # Logging
     # -------------------------------
@@ -240,22 +281,23 @@ def load_features(normalize_features=True, embedding_file=None):
     print(f"Loaded features for {len(features)} sequences.")
     print("****Sample feature shapes:****")
     print(f"  Embedding: {sample[0].shape}")
-    print(f"  Contact Map: {sample[1].shape}")
-    print(f"  Physio-Chemical (normalized): {sample[2].shape}")
-    print(f"  BLOSUM62 (normalized): {sample[3].shape}")
-    print(f"  Sinusoidal PE (normalized) shape: {sample[4].shape}")
+    # print(f"  Contact Map: {sample[1].shape}") #Contact map is not used
+    print(f"  Physio-Chemical (normalized): {sample[1].shape}")
+    print(f"  BLOSUM62 (normalized): {sample[2].shape}")
+    print(f"  Sinusoidal PE (normalized) shape: {sample[3].shape}")
+    print(f"  Sequence: {sample[4]}")
     print(f"  MIC: {sample[5]}")
 
 
     return features
 
 
-def save_datasets(save_path=None, embedding_file=None):
+def save_datasets(save_path=None, embedding_file=None, blosum_csv='', physio_csv='', sinusoidal_csv='', dataset_csv=''):
     """
     datasets: List of (train_set, val_set, test_set)
     filepath: str, e.g. 'datasets.npz'
     """
-    features = load_features(embedding_file=embedding_file)
+    features = load_features(embedding_file=embedding_file, blosum_csv=blosum_csv, physio_csv=physio_csv, sinusoidal_csv=sinusoidal_csv, dataset_csv=dataset_csv)
     datasets = stratified_train_val_test_splits(
         features,
         seed=42,
@@ -268,7 +310,7 @@ def save_datasets(save_path=None, embedding_file=None):
     
     print(f"Datasets saved to {save_path}.")
 
-def load_datasets(datasets_index=[0, 1, 2, 3, 4], dataset_path=DATASET_PATH_ECOLI_PROTBERT):
+def load_datasets(datasets_index=[0, 1, 2, 3, 4], dataset_path=''):
     """
     datasets_index: Which Dataset to load 
     0: First dataset 1: Second dataset and so on.
@@ -285,6 +327,7 @@ def load_datasets(datasets_index=[0, 1, 2, 3, 4], dataset_path=DATASET_PATH_ECOL
                 f"Invalid dataset index {i}. Valid range: [0, {max_idx}]"
             )
 
+    print(f"Datasets loaded from {dataset_path}.")
     return [datasets[i] for i in datasets_index]
 
 def save_results_table(results, filename="metrics_results.csv"):
@@ -310,8 +353,59 @@ def save_results_table(results, filename="metrics_results.csv"):
 if __name__ == "__main__":
     # save_datasets(DATASET_PATH_ECOLI_PROTT5, embedding_file=EMBEDDING_FILE_PROTT5)
     # save_datasets(DATASET_PATH_ECOLI_PROTBERT, embedding_file=EMBEDDING_FILE_PROTBERT)
-    save_datasets(save_path=DATASET_PATH_ECOLI_ESM2, embedding_file=EMBEDDING_FILE_ESM2)
-    datasets = load_datasets(dataset_path=DATASET_PATH_ECOLI_ESM2)
-    load_features(embedding_file=EMBEDDING_FILE_ESM2)
+    # save_datasets(save_path=DATASET_PATH_ECOLI_ESM2, embedding_file=EMBEDDING_FILE_ESM2)
+    
+    '''save_datasets(save_path=DATASET_PATH_P_AERUGINOSA_PROTT5,
+                    embedding_file=EMBEDDING_FILE_P_AERUGINOSA_PROTT5,
+                    blosum_csv=BLOSUM62_FILE_P_AERUGINOSA,
+                    physio_csv=PHYSIO_CHEM_FILE_P_AERUGINOSA,
+                    sinusoidal_csv=SINUSOIDAL_ENCODING_FILE_P_AERUGINOSA,
+                    dataset_csv=DATASET_CSV_P_AERUGINOSA
+                  )'''
+    
+    '''save_datasets(save_path=DATASET_PATH_ECOLI_PROTT5,
+                    embedding_file=EMBEDDING_FILE_ECOLI_PROTT5,
+                    blosum_csv=BLOSUM62_FILE_ECOLI,
+                    physio_csv=PHYSIO_CHEM_FILE_ECOLI,
+                    sinusoidal_csv=SINUSOIDAL_ENCODING_FILE_ECOLI,
+                    dataset_csv=DATASET_CSV_ECOLI
+                  )'''
+    
+    '''save_datasets(save_path= DATASET_PATH_ECOLI_PROTBERT,
+                    embedding_file=EMBEDDING_FILE_ECOLI_PROTBERT,
+                    blosum_csv=BLOSUM62_FILE_ECOLI,
+                    physio_csv=PHYSIO_CHEM_FILE_ECOLI,
+                    sinusoidal_csv=SINUSOIDAL_ENCODING_FILE_ECOLI,
+                    dataset_csv=DATASET_CSV_ECOLI
+                  )'''
+        
+    '''save_datasets(save_path= DATASET_PATH_ECOLI_ESM2,
+                embedding_file=EMBEDDING_FILE_ECOLI_ESM2,
+                blosum_csv=BLOSUM62_FILE_ECOLI,
+                physio_csv=PHYSIO_CHEM_FILE_ECOLI,
+                sinusoidal_csv=SINUSOIDAL_ENCODING_FILE_ECOLI,
+                dataset_csv=DATASET_CSV_ECOLI
+                )'''
+    
+    
+   
+    
+    save_datasets(save_path= DATASET_PATH_SAUREUS_PROTT5_80_10,
+            embedding_file=EMBEDDING_FILE_SAUREUS_PROTT5,
+            blosum_csv=BLOSUM62_FILE_SAUREUS,
+            physio_csv=PHYSIO_CHEM_FILE_SAUREUS,
+            sinusoidal_csv=SINUSOIDAL_ENCODING_FILE_SAUREUS,
+            dataset_csv=DATASET_CSV_SAUREUS
+            )
+    
+    
+    
+    datasets = load_datasets(dataset_path=DATASET_PATH_SAUREUS_PROTT5_80_10)
+    
+    '''load_features(embedding_file=EMBEDDING_FILE_P_AERUGINOSA_PROTT5,
+                  blosum_csv=BLOSUM62_FILE_P_AERUGINOSA, 
+                  physio_csv=PHYSIO_CHEM_FILE_P_AERUGINOSA,
+                  sinusoidal_csv=SINUSOIDAL_ENCODING_FILE_P_AERUGINOSA, 
+                  dataset_csv=DATASET_CSV_P_AERUGINOSA)'''
 
 

@@ -1,0 +1,4 @@
+conda install -c conda-forge dssp
+conda install -c conda-forge libcifpp
+
+biopython 

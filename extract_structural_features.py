@@ -431,7 +431,7 @@ def explain_npy_feature(npy_path: str):
     msg = f"""
             Sequence: {seq}
 
-            Residue IDs (len={len(residue_ids)}): 
+            Residue IDs (len={len(residue_ids)} [China, Id]): 
             {residue_ids}
 
             CA coordinates shape: {ca_coords.shape}
@@ -660,7 +660,8 @@ if __name__ == "__main__":
     
     
     # extract_pdb_features(input_folder, out_dir) #1. 
-    # explain_npy_feature('./data/alphafold_pdb_stap/result/pdb_features/stapc_group_1_5_1_unrelaxed_rank_001_alphafold2_ptm_model_3_seed_000_features.npz')
+    explain_npy_feature('/data/prem001/PGAT-ABPp/code/data/alphafold_pdb_ecoli/pdb_features/ecoli_group_1_5_1_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_000_features.npz')
+    import sys; sys.exit(0)
 
     #Ecoli
     '''generate_contact_map_csv(

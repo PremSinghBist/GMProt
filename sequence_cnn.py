@@ -44,5 +44,66 @@ class SequenceCNN(layers.Layer):
 
         x = tf.concat([c3, c5, c7, c11], axis=-1)  # (B, 64*4=256)
         return self.proj(x)  # (B, 128)
+class DilatedConvAttention(tf.keras.layers.Layer):
+    def __init__(self, hidden_dim=128, num_heads=4, dropout=0.1):
+        super().__init__()
 
+        # -------- Dilated Conv Block --------
+        self.conv1 = tf.keras.layers.Conv1D(hidden_dim, 3, padding='same', dilation_rate=1, activation='relu')
+        self.conv2 = tf.keras.layers.Conv1D(hidden_dim, 3, padding='same', dilation_rate=2, activation='relu')
+        self.conv3 = tf.keras.layers.Conv1D(hidden_dim, 3, padding='same', dilation_rate=4, activation='relu')
+
+        self.norm = tf.keras.layers.LayerNormalization()
+
+        # -------- Attention --------
+        self.attn = tf.keras.layers.MultiHeadAttention(
+            num_heads=num_heads,
+            key_dim=hidden_dim // num_heads
+        )
+
+        # self.attn_dense = tf.keras.layers.Dense(1)  # Reduced Performance | for attention pooling weights
+
+        self.dropout = tf.keras.layers.Dropout(dropout)
+
+        # -------- Projection --------
+        self.proj = tf.keras.layers.Dense(hidden_dim)
+
+    def call(self, x, training=False):
+        """
+        x: (B, L) or (B, L, C)
+        """
+
+        # If input is token IDs → embed first
+        if len(x.shape) == 2:
+            x = tf.one_hot(x, depth=25)  # assuming vocab size = 25 (amino acids)
+
+        # -------- Dilated Convolutions --------
+        x1 = self.conv1(x)
+        x2 = self.conv2(x)
+        x3 = self.conv3(x)
+
+        # Multi-scale fusion
+        x = x1 + x2 + x3 #element-wise sum to fuse multi-scale features
+        # x = tf.concat([x1, x2, x3], axis=-1) #also try concat fusion (perf. dropped) | concatenation along feature dimension, preserves all multi-scale features but increases dim by 3x
+        x = self.norm(x)
+
+        # -------- Self Attention --------
+        attn_out = self.attn(x, x)
+        attn_out = self.dropout(attn_out, training=training)
+
+        # Residual connection
+        x = x + attn_out
+
+        # --------| Max pooling, Preserve max feature  --------
+        x = tf.reduce_max(x, axis=1)   # (B, hidden_dim) 
+
+        #-------- Attention Pooling instead of max Pooling --------
+        '''scores = self.attn_dense(x)          # shape: (batch_size, seq_len, 1)
+        weights = tf.nn.softmax(scores, axis=1)
+        x = tf.reduce_sum(weights * x, axis=1)  '''
+
+        # -------- Final projection --------
+        x = self.proj(x)
+
+        return x
 

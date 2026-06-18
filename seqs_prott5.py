@@ -10,7 +10,7 @@ from transformers import T5Tokenizer, T5EncoderModel
 from tqdm import tqdm
 
 MODEL_NAME = "Rostlab/prot_t5_xl_uniref50"
-BATCH_SIZE = 4  # adjust based on GPU memory
+BATCH_SIZE = 64  # adjust based on GPU memory
 
 
 # ------------------------
@@ -106,22 +106,13 @@ def save_embeddings(original_seqs, processed_seqs, embeddings, filepath):
     print(f"Saved embeddings to {filepath}")
 
 
-def load_embeddings(filepath):
-    data = np.load(filepath, allow_pickle=True)
-    original_seqs = data["original_sequences"]
-    processed_seqs = data["processed_sequences"]
-    embeddings = data["embeddings"]
 
-    print(f"Loaded {len(original_seqs)} sequences")
-    print(f"Embeddings array shape: {embeddings.shape}")
-
-    return original_seqs, processed_seqs, embeddings
 
 
 # ------------------------
 # Main pipeline
 # ------------------------
-def main(csv_path, save_path):
+def compute_save_embeddings(csv_path, save_path):
     device = get_device()
     model, tokenizer = get_model_and_tokenizer(device)
 
@@ -164,11 +155,18 @@ if __name__ == "__main__":
     # save_path = f"/data/prem001/PGAT-ABPp/code/prott5/{Path(MODEL_NAME).name}/prott5_residue_level.npz"
 
     #Staphylococcus aureus data
-    seq_input_path = "/data/prem001/PGAT-ABPp/code/data/s_aureus_cleaned.csv"
-    save_path = f"/data/prem001/PGAT-ABPp/code/prott5/{Path(MODEL_NAME).name}/prott5_s_aureus_residue_level.npz"
+    # seq_input_path = "/data/prem001/PGAT-ABPp/code/data/s_aureus_cleaned.csv"
+    # save_path = f"/data/prem001/PGAT-ABPp/code/prott5/{Path(MODEL_NAME).name}/prott5_s_aureus_residue_level.npz"
 
-    main(seq_input_path, save_path)
+    #Pseudomonas aeruginosa data
+    seq_input_path = "./data/p_aeruginosa_dataset.csv"
+    save_path = f"./data/prott5_p_aeruginosa_residue_level.npz"
 
+    compute_save_embeddings(seq_input_path, save_path)
+
+
+    #Load embeddings
+    from data_util import load_embeddings
     original_seqs, processed_seqs, embeddings = load_embeddings(save_path)
     print(
         f"First sequence length: {len(original_seqs[0])}, "

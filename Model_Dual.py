@@ -307,7 +307,7 @@ class CrossAttentionFusion(tf.keras.layers.Layer):
         # Learnable modality scoring
         self.score = tf.keras.layers.Dense(1)
 
-    def call(self, seq_feat, gnn_feat, physio_feat, training=False):
+    def call(self, seq_feat, physio_feat, training=False):
         """
         Inputs:
             seq_feat    : [B, D]

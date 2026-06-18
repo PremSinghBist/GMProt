@@ -1,14 +1,17 @@
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 
 @dataclass
 class ExperimentConfig:
     # Training
     batch_size: int = 256
-    epochs: int = 300
+    epochs: int = 500
     lr: float = 3e-4
-    seed: int = 42
-    patience: int = 200
+    seed: int = 42 #6, 0 , 3 , 7, 20, 35, 29, 27, 17, 42
+    seeds: list = field(
+        default_factory=lambda: [6, 0 , 3 , 7, 20, 35, 29, 27, 17, 42]
+    )
+    patience: int = 300
 
     #physio features
     physio_feature_dim: int = 32 
@@ -59,6 +62,7 @@ class ExperimentConfig:
     seq_proj_A: str = "gelu"
     seq_out_A: str = "gelu"
     seq_bottleneck_A: str = "gelu"
+    seq_carp_bottleneck_A: str = "gelu"
 
     #Graph Branch Activation
     gnn_proj_A: str = "gelu"

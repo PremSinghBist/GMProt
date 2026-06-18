@@ -1,3 +1,37 @@
-nohup python dual_branch_attention_fusion_train.py > logs/attn_with_sinusoidal_pe.log 2>&1 &
+nohup python train.py > logs/attn_with_sinusoidal_pe.log 2>&1 &
 ps -u $USER | grep python  u 
+
+
+
+
+
+python train.py train --model p_aeruginia_70_15 --datasets 0 1 2 3 4
+python train.py train --model p_aeruginia_80_10 --datasets 0 1 2 3 4
+
+
+python train.py train --model ecoli_protT5_crossAttn --datasets 0 1 2 3 4
+python train.py train --model ecoli_protT5_AttnWeighted --datasets 0 1 2 3 4
+python train.py predict --model ecoli_prot5_rand_seed42 --datasets 0 1 2 3 4
+
+
+python train.py train --model sAureus_protT5_70_15 --datasets 0 1 2 3 4
+python train.py train --model sAureus_protT5_80_10 --datasets 0 1 2 3 4
+
+
+python train.py train --model p_aerigompsa_protT5_70_15 --datasets 0 1 2 3 4
+python train.py train --model p_aerigompsa_protT5_80_10 --datasets 0 1 2 3 4
+
+
+
+
+ps -u $USER | grep python
+htop -u $USER 
+ps -eaf | grep <PID>
+free -h  | check memory usage 
+nvidia-smi | grep <PID>
+
+
+
+
+
 

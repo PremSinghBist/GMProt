@@ -121,6 +121,8 @@ def compute_save_physio_features(seq_csv_path=None, save_path = None):
 
     
     physio_df.to_csv(save_path)
+    
+    print(f"Count of total columns (including sequence): {physio_df.shape[1]} Total: {physio_df.columns.tolist()}")
 
     print(f"PhysioChem Features saved successfully to: {save_path}.")
 
@@ -434,23 +436,23 @@ def comp_save_full_physio_with_nc_terminal_bias():
 
     physio.to_csv(full_phyisioc_with_nc, index=False)
 
-def get_physio_feature_labels():
-    dummy_seq = ["ACDEFGHIKLMNPQRSTVWY"]  # any valid peptide
-    desc = GlobalDescriptor(dummy_seq)
-    desc.calculate_all()
-    return desc.descriptor_names
-
 
 if __name__ == "__main__":
     #Ecoli
     '''input_seq_csv_path='./data/ecoli_mic_normalized.csv', 
     save_path = 'data/phyiochem_ecoli.csv' '''
 
-    input_seq_csv_path='./data/s_aureus_cleaned.csv' 
-    save_path = './data/s_aureus_phyiochem.csv'
+    #S. aureus
+    # input_seq_csv_path='./data/s_aureus_cleaned.csv' 
+    # save_path = './data/s_aureus_phyiochem.csv'
+    
+    #P. aeruginosa
+    input_seq_csv_path='./data/p_aeruginosa_dataset.csv' 
+    save_path = './data/p_aeruginosa_phyiochem.csv'
 
 
-    # compute_save_physio_features(input_seq_csv_path, save_path)
+    compute_save_physio_features(input_seq_csv_path, save_path)
+    
     # comp_save_full_physio_with_nc_terminal_bias() #Save full physiochem features with nc bias
     '''compute_physio_mic_correlation(
         physio_csv=f"data/phyiochem.csv",
@@ -466,9 +468,6 @@ if __name__ == "__main__":
     # corr_dict = compute_physio_mic_correlation()
     # save_dict_to_txt(corr_dict)
 
-    # Use one peptide sequence or the full list
-    labels_physio = get_physio_feature_labels()
-    print(labels_physio)
 
     
 

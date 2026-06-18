@@ -29,7 +29,7 @@ from scipy.stats import pearsonr, kendalltau
 import data_util, data_visualization
 from experimental_config import ExperimentConfig
 from Model_Dual import GraphAttentionNetwork,  TransformerEncoderReadout, CrossAttentionFusion
-from sequence_cnn import SequenceCNN
+from sequence_cnn import SequenceCNN, DilatedConvAttention
 from validation_pearson import ValPearsonCallback
 # --------------------------- GPU Setup ---------------------------
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
@@ -52,7 +52,7 @@ def set_global_seed(seed: int = 42):
     np.random.seed(seed)
     tf.random.set_seed(seed)
 
-
+set_global_seed(cfg.seed)
 
 # --------------------------- Dataset ---------------------------
 def generator(X):
@@ -201,7 +201,8 @@ class ImprovedDualBranchGNN_AttentionFusion(keras.Model):
         self.cross_attn_fusion = CrossAttentionFusion(dim=cfg.seq_bottleneck_dim, num_heads=4, dropout=0.1)
 
         #seq cnn branch 
-        self.seq_cnn = SequenceCNN()
+        #self.seq_cnn = SequenceCNN()
+        self.seq_cnn = DilatedConvAttention(hidden_dim=128, num_heads=4, dropout=0.1)
         self.seq_cnn_norm = layers.LayerNormalization() 
         self.seq_cnn_dropout = layers.Dropout(cfg.fuse_dropout)
 
@@ -299,21 +300,21 @@ class ImprovedDualBranchGNN_AttentionFusion(keras.Model):
         seq_cnn_feat =  self.seq_cnn_norm(seq_cnn_feat) #stabilizes the scale of activations across the features
         seq_cnn_feat = self.seq_cnn_dropout(seq_cnn_feat, training=training)
 
-        # Gated Modulation Fusion
+        # CNN Modulation
         seq_feat = seq_feat * (1 + cfg.cnn_gating_threshold * tf.tanh(seq_cnn_feat)) #gating trick(used in alphafold) for cnn+protT5
 
         # Fusion based output testing(Ablation Test Cross Attention Fusion)
-        '''fused = self.get_cross_attention_weighted_feature_fused(training=training, seq_feat=seq_feat, physio_feat=physio_feat) #gnn feature removed (Perf. dropped)
+        '''fused = self.get_cross_attention_weighted_feature_fused(training=training, seq_feat=seq_feat, gnn_feat=None, physio_feat=physio_feat) #gnn feature removed (Perf. dropped)
         return self.out(fused)'''
 
         #Attention weighted fusion 
-        '''fused = self.get_attention_weighted_feature_fused(training=training, seq_feat=seq_feat,  physio_feat=physio_feat, seq_cnn_feat=seq_cnn_feat) 
+        '''fused = self.get_attention_weighted_feature_fused(training=training, seq_feat=seq_feat, gnn_feat=None, physio_feat=physio_feat, seq_cnn_feat=seq_cnn_feat) 
         return self.out(fused)'''
 
         # Output
         return self.out(seq_feat + physio_feat)
 
-    def get_attention_weighted_feature_fused(self, training, seq_feat, physio_feat, seq_cnn_feat):
+    def get_attention_weighted_feature_fused(self, training, seq_feat, gnn_feat, physio_feat, seq_cnn_feat):
         # concat_feats = tf.stack([seq_feat, gnn_feat, physio_feat, seq_cnn_feat], axis=1) #cnn based
         # concat_feats = tf.stack([seq_feat, gnn_feat, physio_feat], axis=1)
         concat_feats = tf.stack([seq_feat,  physio_feat], axis=1)
@@ -324,9 +325,10 @@ class ImprovedDualBranchGNN_AttentionFusion(keras.Model):
         fused = self.fuse_dropout(fused, training=training)
         return fused
     
-    def get_cross_attention_weighted_feature_fused(self, training, seq_feat, physio_feat):
+    def get_cross_attention_weighted_feature_fused(self, training, seq_feat, gnn_feat, physio_feat):
         fused, attn_scores = self.cross_attn_fusion(
             seq_feat,
+            gnn_feat,
             physio_feat,
             training=training
 
@@ -387,6 +389,7 @@ def train_model(train_f, val_f, test_f, model_name, mdl_index):
     )
     
     
+
     model_path, config_path = get_model_path(model_name)
    
     cfg.save_config(config_path) #Save configuration Parameters
@@ -396,7 +399,7 @@ def train_model(train_f, val_f, test_f, model_name, mdl_index):
     callbacks = [
         EarlyStopping(monitor="val_rmse", mode="min", patience=cfg.patience, restore_best_weights=True),
         ModelCheckpoint(str(model_path / f"model_{mdl_index}"), save_best_only=True, monitor='val_rmse', mode='min'),
-        ReduceLROnPlateau(monitor="val_rmse", factor=0.5, patience=cfg.patience, min_lr=1e-6),
+        ReduceLROnPlateau(monitor="val_rmse", factor=0.5, patience=50, min_lr=1e-6),
         ValPearsonCallback(val_ds, val_pearson_history)
     ]
 
@@ -412,7 +415,7 @@ def train_model(train_f, val_f, test_f, model_name, mdl_index):
 
 
     metrics = compute_metrics(model, test_ds, model_path, model_index=mdl_index)
-    print(f"[Fold {mdl_index} ] Test metrics: {metrics} ")
+    print(f"[Fold {mdl_index}] Test metrics: {metrics}")
     return model, metrics
 
 def load_model_and_evaluate_test(
@@ -438,10 +441,14 @@ def load_model_and_evaluate_test(
                 "ImprovedDualBranchGNN_AttentionFusion": ImprovedDualBranchGNN_AttentionFusion,
                 "GraphAttentionNetwork": GraphAttentionNetwork,
                 "TransformerEncoderReadout": TransformerEncoderReadout,
-                "SequenceCNN": SequenceCNN,
+                "DilatedConvAttention": DilatedConvAttention,
             },
             compile=False
         )
+        print(f"*******Loaded Model Summary****** {model.summary()}")
+
+        print(f"Evaluating dataset {dataset_index} with model_{dataset_index}")
+
 
         # Reuse existing metric computation
         metric = compute_metrics(
@@ -453,25 +460,14 @@ def load_model_and_evaluate_test(
         metrics.append(metric)
 
     print("All metrics:", metrics)
-    
-    #Saves the metrics results to a CSV file for later analysis or reporting.
-    metrics_save_path = f"model/{model_name}/metrics_results.csv"
-    data_util.save_results_table(metrics, filename=metrics_save_path)
-    
 
     return metrics
 
 
 # --------------------------- Execute ---------------------------
-def execute(model_name, datasets_index=[0], save_file='metrics_results.csv', dataset_path='', seed=42):
-    set_global_seed(seed) #Test for randomness 
-    
+def execute(model_name, datasets_index=[0], save_file='metrics_results.csv', dataset_path=''):
     datasets = data_util.load_datasets(datasets_index=datasets_index, dataset_path=dataset_path)
     all_metrics = []
-    
-    if seed:
-        model_name = f"{model_name}_seed{seed}"
-        
     for i, (train_f, val_f, test_f) in enumerate(datasets):
         _, metrics = train_model(train_f, val_f, test_f, model_name, i)
         all_metrics.append(metrics)
@@ -494,16 +490,15 @@ def load_model(model_name, model_index):
             "ImprovedDualBranchGNN_AttentionFusion": ImprovedDualBranchGNN_AttentionFusion,
             "GraphAttentionNetwork": GraphAttentionNetwork,
             "TransformerEncoderReadout": TransformerEncoderReadout,
-            "SequenceCNN": SequenceCNN,
+            "DilatedConvAttention": DilatedConvAttention,
         },
         compile=False
     )
     print(f"*******Loaded Model Summary****** {model.summary()}")
     return model
 
-def load_input_for_integrated_gradients(datasets_index=[0], dataset_path=''):
-    datasets = data_util.load_datasets(datasets_index=datasets_index, dataset_path=dataset_path)
-    
+def load_input_for_integrated_gradients(datasets_index=[0]):
+    datasets = data_util.load_datasets(datasets_index=datasets_index)
     for i, (train_f, val_f, test_f) in enumerate(datasets):
         test_ds = make_dataset(test_f)
         for inputs, labels in test_ds:
@@ -731,11 +726,9 @@ def plot_combined_contributions(model, dataset, physio_labels, save_path="./visu
         print(f"  {label}: {score:.4f}")
 
 
-def compute_feature_contributions(model_name, model_index, save_path_base="./visualization/IG", dataset_path=''):
+def compute_feature_contributions(model_name, model_index, save_path_base="./visualization/IG"):
     model = load_model(model_name, model_index=model_index)
-    _, _, test_f = data_util.load_datasets([model_index], dataset_path=dataset_path)[0]
-    
-    
+    _, _, test_f = data_util.load_datasets([model_index])[0]
     test_ds = make_dataset(test_f)
 
     
@@ -752,18 +745,9 @@ def compute_feature_contributions(model_name, model_index, save_path_base="./vis
 
 
 if __name__ == "__main__":
-    compute_feature_contributions(model_name="ecoli_ProtT5", model_index=0, 
-                                  dataset_path=data_util.DATASET_PATH_ECOLI_PROTT5,
-                                  save_path_base="./result/interpretability")
-    import sys; sys.exit("Terminated")
-    dataset_path = data_util.DATASET_PATH_P_AERUGINOSA_PROTT5_80_10
-    # dataset_path = data_util.DATASET_PATH_P_AERUGINOSA_PROTT5_70_15
-    
-    # dataset_path = data_util.DATASET_PATH_SAUREUS_PROTT5_70_15
-    # dataset_path = data_util.DATASET_PATH_SAUREUS_PROTT5_80_10
-    # dataset_path = data_util.DATASET_PATH_ECOLI_PROTT5
-    # dataset_path = data_util.DATASET_PATH_ECOLI_PROTBERT
-    # dataset_path = data_util.DATASET_PATH_ECOLI_ESM2
+    #Choose Dataset Path
+    # dataset_path = data_util.DATASET_PATH_P_AERUGINOSA_PROTT5
+    dataset_path = data_util.DATASET_PATH_ECOLI_PROTT5
     
     parser = argparse.ArgumentParser(description="Train, Predict or Plot Feature Contribution.")
     parser.add_argument(
@@ -787,12 +771,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     
-    
     if args.mode == "train":
         model_name = args.model
         datasets_index = args.datasets
-        # for seed in cfg.seeds: #Test for randomness
-        metrics = execute(model_name=model_name, datasets_index=datasets_index, dataset_path=dataset_path, seed=cfg.seed)
+        metrics = execute(model_name=model_name, datasets_index=datasets_index, dataset_path=dataset_path)
     elif args.mode == "predict":
         model_name = args.model
         datasets_index = args.datasets

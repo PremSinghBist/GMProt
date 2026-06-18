@@ -1,5 +1,11 @@
 # Ignore all data files
 data/
+visualization/
+logs/
+model/
+prott5/
+features_alpha/
+
 
 # =========================
 # Python cache / bytecode
